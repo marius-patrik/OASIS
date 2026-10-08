@@ -271,7 +271,7 @@ impl Universe {
 
     /// Independently scheduled by the authoritative world loop. Native
     /// modules receive only input for entities whose source module they own.
-    pub fn step_world(&mut self, world: Id, delta_nanos: u64)
+    pub(crate) fn step_world(&mut self, world: Id, delta_nanos: u64)
         -> ContractResult<Vec<StepOutput>> {
         if delta_nanos == 0 { return Err(invalid("simulation delta must be positive")); }
         let shard = self.worlds.get_mut(&world).ok_or(ContractError::NotFound(world))?;
