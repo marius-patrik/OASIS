@@ -27,6 +27,17 @@ pub struct CompositionPlan {
     pub contributions: Vec<ContributedFrame>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct FrameRequest {
+    pub camera_provider: Id,
+    pub controller_entity: Id,
+    pub world_instance_id: Id,
+    pub frame_number: u64,
+    pub width: u32,
+    pub height: u32,
+    pub output_time_nanos: u128,
+}
+
 /// No world renderer or character renderer is intrinsically preferred; the
 /// player controller selects which native camera owns the current view.
 #[derive(Default)]
@@ -50,17 +61,12 @@ impl RenderPipeline {
         self.order.retain(|source| *source != id);
         Ok(())
     }
-    pub fn compose(
-        &mut self,
-        world: &mut WorldState,
-        camera_provider: Id,
-        controller_entity: Id,
-        world_instance_id: Id,
-        frame_number: u64,
-        width: u32,
-        height: u32,
-        output_time_nanos: u128,
-    ) -> ContractResult<CompositionPlan> {
+    pub fn compose(&mut self, world: &mut WorldState, request: FrameRequest)
+        -> ContractResult<CompositionPlan> {
+        let FrameRequest {
+            camera_provider, controller_entity, world_instance_id, frame_number,
+            width, height, output_time_nanos,
+        } = request;
         if width == 0 || height == 0 {
             return Err(ContractError::InvalidData("frame dimensions must be positive".into()));
         }
@@ -127,8 +133,11 @@ mod tests {
         let mut pipe = RenderPipeline::new();
         pipe.register(Id(10), Box::new(NativeRenderer{frame:Id(30),handle:"world"})).unwrap();
         pipe.register(Id(20), Box::new(NativeRenderer{frame:Id(40),handle:"character"})).unwrap();
-        let plan = pipe.compose(&mut WorldState::default(), Id(20), Id(100),
-            Id(200), 12, 1920, 1080, 1000).unwrap();
+        let plan = pipe.compose(&mut WorldState::default(), FrameRequest {
+            camera_provider: Id(20), controller_entity: Id(100),
+            world_instance_id: Id(200), frame_number: 12,
+            width: 1920, height: 1080, output_time_nanos: 1000,
+        }).unwrap();
         assert_eq!(plan.camera.frame_id, Id(40));
         assert_eq!(plan.camera.owner_entity_id, Id(100));
         assert_eq!(plan.contributions.len(), 2);
@@ -148,11 +157,11 @@ mod tests {
     fn refuses_missing_camera_source_and_invalid_dimensions() {
         let mut pipe = RenderPipeline::new();
         let mut world = WorldState::default();
-        assert!(matches!(pipe.compose(&mut world,Id(1),Id(2),Id(3),1,10,10,0),
+        assert!(matches!(pipe.compose(&mut world, FrameRequest{camera_provider:Id(1),controller_entity:Id(2),world_instance_id:Id(3),frame_number:1,width:10,height:10,output_time_nanos:0}),
                          Err(ContractError::NotFound(Id(1)))));
         pipe.register(Id(1), Box::new(NativeRenderer{frame:Id(4),handle:"world"})).unwrap();
-        assert!(pipe.compose(&mut world,Id(1),Id(2),Id(3),1,0,10,0).is_err());
+        assert!(pipe.compose(&mut world, FrameRequest{camera_provider:Id(1),controller_entity:Id(2),world_instance_id:Id(3),frame_number:1,width:0,height:10,output_time_nanos:0}).is_err());
         pipe.remove(Id(1)).unwrap();
-        assert!(pipe.compose(&mut world,Id(1),Id(2),Id(3),1,10,10,0).is_err());
+        assert!(pipe.compose(&mut world, FrameRequest{camera_provider:Id(1),controller_entity:Id(2),world_instance_id:Id(3),frame_number:1,width:10,height:10,output_time_nanos:0}).is_err());
     }
 }
