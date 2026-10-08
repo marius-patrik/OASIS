@@ -118,7 +118,9 @@ impl Universe {
             character_id: principal.character_id,
         };
         self.connections.insert(ticket.connection_id, principal);
-        self.active_connection.insert(ticket.character_id, ticket.connection_id);
+        if let Some(previous) = self.active_connection.insert(ticket.character_id, ticket.connection_id) {
+            self.connections.remove(&previous);
+        }
         Ok(ticket)
     }
 
