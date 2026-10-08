@@ -70,6 +70,10 @@ jobs:
         env:
           DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
         run: cargo test -p oasis-service --test postgres --locked -- --test-threads=1
+      - name: Verify crash-safe native transfer and quarantine
+        env:
+          DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis_live"
+        run: cargo test -p oasis-service --test live_travel --locked -- --test-threads=1
 
   boundaries:
     name: Specification and adapter independence
@@ -78,7 +82,3 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify universal implementation boundaries
         run: python3 tests/verify_structure.py
-      - name: Verify crash-safe native transfer and quarantine
-        env:
-          DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis_live"
-        run: cargo test -p oasis-service --test live_travel --locked -- --test-threads=1
