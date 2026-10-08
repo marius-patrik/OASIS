@@ -8,6 +8,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::time::SystemTime;
 
 use oasis_contracts::{ContractError, Id};
 use oasis_runtime::universe::{PersistedPlacement, Universe};
@@ -20,6 +21,7 @@ pub enum RecoveryError {
     InvalidSession,
     MissingEntity(Id),
     MissingAuthority(Id),
+    LiveAuthority(Id),
 }
 
 impl fmt::Display for RecoveryError {
@@ -31,6 +33,9 @@ impl fmt::Display for RecoveryError {
             Self::MissingEntity(id) => write!(f,"entity {} not found",id.0),
             Self::MissingAuthority(id) => {
                 write!(f,"no live authority for character {}",id.0)
+            }
+            Self::LiveAuthority(id) => {
+                write!(f,"character {} still has a live server lease",id.0)
             }
         }
     }
@@ -94,4 +99,45 @@ impl<'a> RecoveryService<'a> {
             native_revision:native.map(|s|s.revision.0),
         })
     }
+    /// After a crash, reassign an EXPIRED authority lease to a new native
+    /// execution context. Native module identity and world remain unchanged.
+    /// An active lease cannot be preempted.
+    ///
+    /// A failure during native instantiation leaves the newly issued lease
+    /// unusable until it expires; no stale engine becomes authoritative.
+    pub fn reclaim_expired_session(
+        &self,
+        universe: &mut Universe,
+        session_id: Id,
+        replacement_context: Id,
+    ) -> Result<RestoredCharacter, RecoveryError> {
+        let session=self.store.load_session(session_id)?
+            .ok_or(RecoveryError::InvalidSession)?;
+        let character=session.character_id;
+        let entity=self.store.load_entity(character)?
+            .ok_or(RecoveryError::MissingEntity(character))?;
+        if universe.has_entity(character) {
+            return Err(RecoveryError::Runtime(ContractError::InvalidData(
+                "character already instantiated".into()
+            )));
+        }
+        let recorded=self.store.recorded_presence(character)?
+            .ok_or(RecoveryError::MissingAuthority(character))?;
+        if recorded.lease_expires_at > SystemTime::now() {
+            return Err(RecoveryError::LiveAuthority(character));
+        }
+        let native=entity.origin_module
+            .ok_or(RecoveryError::Runtime(ContractError::InvalidData(
+                "origin module missing".into()
+            )))?;
+        if universe.context_for(recorded.world_instance_id,native)
+            != Some(replacement_context) {
+            return Err(RecoveryError::Runtime(ContractError::StaleAuthority));
+        }
+        self.store.reclaim_expired_authority(
+            session_id,character,replacement_context,recorded.authority_epoch
+        )?;
+        self.restore_session(universe,session_id)
+    }
+
 }
