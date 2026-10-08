@@ -66,10 +66,18 @@ impl WorldState {
 }
 
 /// Per-call view that exposes data, never native engine-specific objects.
-pub struct Port<'a> { world: &'a mut WorldState }
+pub struct Port<'a> {
+    world: &'a mut WorldState,
+    caller_context: Option<Id>,
+}
 
 impl<'a> Port<'a> {
-    pub fn new(world: &'a mut WorldState) -> Self { Self { world } }
+    pub fn new(world: &'a mut WorldState) -> Self {
+        Self { world, caller_context:None }
+    }
+    fn for_context(world: &'a mut WorldState, context: Id) -> Self {
+        Self { world, caller_context:Some(context) }
+    }
 }
 
 impl WorldPort for Port<'_> {
@@ -104,6 +112,9 @@ impl WorldPort for Port<'_> {
             .ok_or(ContractError::NotFound(entity_id))
     }
     fn submit_interaction(&mut self, request: InteractionRequest) -> ContractResult<()> {
+        if self.caller_context.is_some_and(|id| id != request.authority.context_id) {
+            return Err(ContractError::StaleAuthority);
+        }
         self.world.verify(&request.authority)?;
         if self.world.submitted.insert(request.id) {
             self.world.pending.push(request);
@@ -144,21 +155,28 @@ impl Host {
         let module = self.modules.get_mut(&context).ok_or(ContractError::NotFound(context))?;
         let handle = module.instantiate(&entity, initial)?;
         if handle.context_id != context { return Err(invalid("native handle belongs to another context")); }
+        if self.handles.values().any(|existing| *existing == handle) {
+            return Err(invalid("native module reused an occupied handle"));
+        }
         self.handles.insert(entity.id, handle);
         self.world.put_entity(entity);
         Ok(handle)
     }
     pub fn step(&mut self, context: Id, clock: ClockStep, inputs: &[InputIntent]) -> ContractResult<StepOutput> {
         let module = self.modules.get_mut(&context).ok_or(ContractError::NotFound(context))?;
-        let mut port = Port::new(&mut self.world);
+        let mut port = Port::for_context(&mut self.world, context);
         let output = module.step(clock, inputs, &mut port)?;
+        // Validate *all* updates before publishing any native snapshot. A
+        // source engine is not allowed to write another context's entities.
         for snapshot in &output.state_changes {
-            if !self.handles.contains_key(&snapshot.entity_id) {
-                return Err(invalid("module returned unknown entity state"));
+            if self.handles.get(&snapshot.entity_id).is_none_or(|h| h.context_id != context) {
+                return Err(invalid("module attempted foreign entity state update"));
             }
-            self.snapshots.insert(snapshot.entity_id, snapshot.clone());
         }
         for request in &output.interactions { port.submit_interaction(request.clone())?; }
+        for snapshot in &output.state_changes {
+            self.snapshots.insert(snapshot.entity_id, snapshot.clone());
+        }
         Ok(output)
     }
     pub fn snapshot(&mut self, entity: Id) -> ContractResult<Snapshot> {
@@ -186,6 +204,8 @@ impl Host {
             .remove(handle)?;
         self.handles.remove(&entity);
         self.snapshots.remove(&entity);
+        self.receivers.remove(&entity);
+        self.world.entities.remove(&entity);
         Ok(())
     }
     /// Dispatch already-authorized requests to their target. When a receiver
@@ -341,4 +361,31 @@ mod tests {
         let mut world=WorldState::default();
         assert!(Port::new(&mut world).frame_map(Id(1),Id(2)).is_err());
     }
+    #[test]
+    fn origin_context_cannot_forge_another_contexts_authority() {
+        let mut state=WorldState::default();
+        let stamp=AuthorityStamp{
+            resource_key:"owned-by-one".into(),context_id:Id(100),epoch:1,
+        };
+        state.grant_authority(stamp.clone()).unwrap();
+        let request=InteractionRequest{
+            id:Id(99),source_entity_id:Id(500),
+            target:InteractionTarget::Entity(Id(700)),
+            operation:TypedValue{
+                type_ref:TypeRef{
+                    namespace:"test".into(),name:"event".into(),version:1,
+                },
+                data:Value::Null,
+            },
+            authority:stamp,source_tick:1,
+        };
+        assert!(matches!(
+            Port::for_context(&mut state,Id(200)).submit_interaction(request.clone()),
+            Err(ContractError::StaleAuthority),
+        ));
+        assert_eq!(state.pending_len(),0);
+        Port::for_context(&mut state,Id(100)).submit_interaction(request).unwrap();
+        assert_eq!(state.pending_len(),1);
+    }
+
 }
