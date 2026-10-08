@@ -17,6 +17,8 @@ authoritative interaction contracts through which they can coexist.
   state snapshots, authority fencing, and typed interaction routing.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
   identity, independent native modules, world presence, movement and replication.
+- [World tick scheduler](runtime/src/scheduler.rs) for independent native
+  simulation clocks without client-driven ticks.
 - [Loopback development gateway](runtime/src/gateway.rs) with real TCP clients.
   This is deliberately not a public network interface and has no production
   authentication, transport security or bandwidth-aware state replication.
