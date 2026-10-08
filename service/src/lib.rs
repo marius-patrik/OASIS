@@ -89,6 +89,7 @@ impl<'a> RecoveryService<'a> {
             Some(PersistedPlacement {
                 world_instance_id:presence.world_instance_id,
                 authority_context_id:presence.authority_context_id,
+                authority_epoch:presence.authority_epoch,
             })
         )?;
         Ok(RestoredCharacter {
