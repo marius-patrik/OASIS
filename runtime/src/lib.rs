@@ -1,8 +1,8 @@
-pub mod render;
-
 //! Independent native-module host. This crate knows no game names or assets.
 //! Engine modules retain simulation and rendering logic and use WorldPort to
 //! obtain external geometry and submit authoritative interactions.
+
+pub mod render;
 
 use std::collections::{BTreeMap, BTreeSet};
 use oasis_contracts::{
