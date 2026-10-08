@@ -15,6 +15,8 @@ authoritative interaction contracts through which they can coexist.
 - [Engine-independent Rust contracts](contracts/src/lib.rs).
 - [Native-module host](runtime/src/lib.rs) with spatial query dispatch, native
   state snapshots, authority fencing, and typed interaction routing.
+- [Adapter catalog](runtime/src/catalog.rs) for transactional, collision-free
+  native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
   identity, independent native modules, world presence, movement and replication.
 - [World tick scheduler](runtime/src/scheduler.rs) for independent native

@@ -4,6 +4,7 @@
 
 pub mod render;
 pub mod universe;
+pub mod catalog;
 pub mod gateway;
 pub mod scheduler;
 
