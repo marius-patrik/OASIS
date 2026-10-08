@@ -34,6 +34,11 @@ authoritative interaction contracts through which they can coexist.
   engine snapshots; native state is persisted using a lossless tagged codec.
   [Database integration tests](store/tests/postgres.rs) exercise two-way
   travel, recovery and rejected stale updates against real PostgreSQL.
+- [Trusted runtime recovery service](service/src/lib.rs) verifies a persisted
+  session, reads its current native state and authoritative world placement,
+  and restores the original engine module through the generic runtime.
+  Expired/missing authority is rejected rather than assuming an empty world.
+  CI restores a character from PostgreSQL into a fresh runtime.
 - [GitHub Actions CI](.github/workflows/ci.yml) compiling the Rust workspace,
   running module-level tests, applying PostgreSQL migrations and checking constraints.
 
@@ -52,16 +57,17 @@ psql -v ON_ERROR_STOP=1 -f migrations/0005_native_checkpoints.sql
 psql -v ON_ERROR_STOP=1 -f tests/schema_smoke.sql
 psql -v ON_ERROR_STOP=1 -f tests/store_fixture.sql
 DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo test -p oasis-store --test postgres
+DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo test -p oasis-service --test postgres
 ```
 
 **Status:** This is a working foundation, **not yet a complete MMO**.
-The **actual DOOM and Cave Story adapters**, binding the database-backed
-Rust store to the live Universe coordinator (including crash recovery),
+The **actual DOOM and Cave Story adapters**, crash-safe **live** world-travel orchestration and lease reclamation,
 production networking/authentication, scalable
 interest-managed replication, and GPU compositing remain unimplemented.
-The PostgreSQL store provides real persistent reads and transactional writes,
-but travel is **not yet orchestrated atomically with native in-memory module
-lifecycle**. The TCP gateway uses injected authentication and returns snapshot
+The PostgreSQL store and recovery service provide real persistent reads,
+transactional writes, and cold-start native-state recovery.
+However, **live travel is not yet orchestrated atomically with native module
+lifecycle**, and expired leases cannot yet be reclaimed. The TCP gateway uses injected authentication and returns snapshot
 identifiers/revisions, not complete game-ready replicated state.
 Cross-game interactions are final black-box verification criteria,
 never hard-coded game-pair features.
