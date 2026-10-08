@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust contracts and universal runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Compile and test entire workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  database:
+    name: PostgreSQL migrations and integrity
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: oasis
+          POSTGRES_PASSWORD: oasis_ci
+          POSTGRES_DB: oasis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oasis -d oasis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: oasis
+      PGPASSWORD: oasis_ci
+      PGDATABASE: oasis
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply universal migrations
+        run: |
+          psql -v ON_ERROR_STOP=1 -f migrations/0001_core.sql
+          psql -v ON_ERROR_STOP=1 -f migrations/0002_indexes.sql
+      - name: Verify relational persistence and constraints
+        run: psql -v ON_ERROR_STOP=1 -f tests/schema_smoke.sql
+
+  boundaries:
+    name: Specification and adapter independence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify universal implementation boundaries
+        run: python3 tests/verify_structure.py
