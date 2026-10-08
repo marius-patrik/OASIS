@@ -74,19 +74,17 @@ impl WorldRunner {
                 // claim set between authorization and the native step.
                 let result = match universe.lock() {
                     Ok(mut core) => {
-                        let claims=core.simulation_leases(world_id);
-                        match claims {
-                            Ok(claims) => {
-                                let checked=claims.iter().try_for_each(|claim| {
-                                    authority.as_ref().map_or(Ok(()), |guard|
-                                        guard.authorize(world_id,*claim))
-                                });
-                                checked.and_then(|()| core.step_world(
-                                    world_id,interval.as_nanos() as u64
-                                ))
-                            },
-                            Err(error)=>Err(error),
-                        }
+                        let checked=match authority.as_ref() {
+                            Some(guard) => core.simulation_leases(world_id)
+                                .and_then(|claims| claims.into_iter().try_for_each(
+                                    |claim| guard.authorize(world_id,claim)
+                                )),
+                            // Only reachable through a cfg(test) constructor.
+                            None => Ok(()),
+                        };
+                        checked.and_then(|()| core.step_world(
+                            world_id,interval.as_nanos() as u64
+                        ))
                     },
                     Err(_) => Err(ContractError::Internal("universe lock poisoned".into())),
                 };
