@@ -128,4 +128,33 @@ fn durable_native_state_travels_between_worlds_without_replacing_the_engine() {
     assert_eq!(active.authority_epoch,3);
     assert_eq!(store.latest_state(id(0x7)).unwrap().unwrap().0,2);
     assert_eq!(store.load_entity(id(0x7)).unwrap().unwrap().origin_module,Some(id(0x5)));
+
+    // A live server renews its lease without changing its fencing epoch.
+    assert_eq!(store.renew_authority(id(0x21),id(0x7),id(0x20),3).unwrap(),3);
+    assert!(store.reclaim_expired_authority(id(0x21),id(0x7),id(0x20),3).is_err());
+
+    // Simulate a crashed server and bootstrap a replacement native runtime
+    // in the SAME existing world and source game module.
+    let mut test_admin=postgres::Client::connect(&url,postgres::NoTls).unwrap();
+    test_admin.batch_execute(
+        "INSERT INTO execution_contexts(id,world_instance_id,module_id,status)
+          VALUES('00000000-0000-0000-0000-000000000050',
+                 '00000000-0000-0000-0000-000000000013',
+                 '00000000-0000-0000-0000-000000000005','running');
+         UPDATE authority_leases SET expires_at=now()-INTERVAL '1 second'
+          WHERE resource_key='character:00000000-0000-0000-0000-000000000007';"
+    ).unwrap();
+    assert!(store.active_presence(id(0x7)).unwrap().is_none());
+    assert_eq!(store.recorded_presence(id(0x7)).unwrap().unwrap().authority_epoch,3);
+    let claimed=store.reclaim_expired_authority(
+        id(0x21),id(0x7),id(0x50),3
+    ).unwrap();
+    assert_eq!(claimed,4);
+    let resumed=store.active_presence(id(0x7)).unwrap().unwrap();
+    assert_eq!(resumed.authority_context_id,id(0x50));
+    assert_eq!(resumed.world_instance_id,id(0x13));
+    assert_eq!(resumed.authority_epoch,4);
+    assert!(store.renew_authority(id(0x21),id(0x7),id(0x20),3).is_err());
+    assert_eq!(store.renew_authority(id(0x21),id(0x7),id(0x50),4).unwrap(),4);
+    assert_eq!(store.latest_state(id(0x7)).unwrap().unwrap().1.revision,Revision(8));
 }
