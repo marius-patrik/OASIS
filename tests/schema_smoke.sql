@@ -407,4 +407,80 @@ BEGIN
   END IF;
 END $$;
 
+
+-- Recovery uses the same character, presence and originating native module.
+INSERT INTO execution_contexts(id,world_instance_id,module_id,status)
+VALUES('00000000-0000-0000-0000-000000000050',
+       '00000000-0000-0000-0000-000000000023',
+       '00000000-0000-0000-0000-000000000005','running');
+DO $$
+DECLARE
+  recovered BIGINT;
+BEGIN
+  SELECT renew_character_authority(
+    '00000000-0000-0000-0000-000000000021',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000025',4
+  ) INTO recovered;
+  IF recovered <> 4 THEN RAISE EXCEPTION 'renewal changed authority epoch'; END IF;
+  BEGIN
+    PERFORM reclaim_character_authority(
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000050',4
+    );
+    RAISE EXCEPTION 'live authority was stolen';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+  UPDATE authority_leases SET expires_at=now()-INTERVAL '1 second'
+    WHERE resource_key='character:00000000-0000-0000-0000-000000000007';
+  BEGIN
+    PERFORM reclaim_character_authority(
+      '00000000-0000-0000-0000-000000000999',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000050',4
+    );
+    RAISE EXCEPTION 'unauthorized takeover succeeded';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  SELECT reclaim_character_authority(
+    '00000000-0000-0000-0000-000000000021',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000050',4
+  ) INTO recovered;
+  IF recovered <> 5 THEN RAISE EXCEPTION 'recovery epoch did not advance'; END IF;
+  IF (SELECT holder_context_id FROM authority_leases WHERE resource_key=
+      'character:00000000-0000-0000-0000-000000000007')
+      <> '00000000-0000-0000-0000-000000000050'::uuid THEN
+    RAISE EXCEPTION 'authority not reassigned to new native context';
+  END IF;
+  BEGIN
+    PERFORM renew_character_authority(
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000025',4
+    );
+    RAISE EXCEPTION 'old context renewed after fencing';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+  BEGIN
+    PERFORM reclaim_character_authority(
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000050',4
+    );
+    RAISE EXCEPTION 'stale recovery was accepted';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+  IF (SELECT count(*) FROM presences WHERE entity_id=
+      '00000000-0000-0000-0000-000000000007' AND active) <> 1 THEN
+    RAISE EXCEPTION 'recovery changed identity or world presence';
+  END IF;
+  IF (SELECT origin_module_id FROM entities WHERE id=
+      '00000000-0000-0000-0000-000000000007')
+      <> '00000000-0000-0000-0000-000000000005'::uuid THEN
+    RAISE EXCEPTION 'recovery changed originating game engine';
+  END IF;
+END $$;
+
 ROLLBACK;
