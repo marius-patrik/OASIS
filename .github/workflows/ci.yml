@@ -17,13 +17,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - name: Regenerate workspace lockfile
-        run: cargo generate-lockfile
-      - name: Emit lockfile for repository synchronization
-        run: |
-          echo OASIS_LOCK_START
-          cat Cargo.lock
-          echo OASIS_LOCK_END
       - name: Compile and test independent runtime and storage codecs
         run: cargo test --workspace --lib --locked
       - name: Clippy
@@ -69,7 +62,7 @@ jobs:
       - name: Run Rust-to-PostgreSQL real travel and recovery tests
         env:
           DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
-        run: cargo test -p oasis-store --test postgres -- --test-threads=1
+        run: cargo test -p oasis-store --test postgres --locked -- --test-threads=1
 
   boundaries:
     name: Specification and adapter independence
