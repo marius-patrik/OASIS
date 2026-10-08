@@ -177,4 +177,128 @@ BEGIN
   END;
 END $$;
 
+
+-- Durable character travel: same entity across independently hosted worlds.
+INSERT INTO sessions(id,user_id,player_id,active_character_id,status,expires_at)
+VALUES('00000000-0000-0000-0000-000000000021',
+       '00000000-0000-0000-0000-000000000002',
+       '00000000-0000-0000-0000-000000000009',
+       '00000000-0000-0000-0000-000000000007','active',now()+INTERVAL '1 hour');
+INSERT INTO execution_contexts(id,world_instance_id,module_id,status)
+VALUES('00000000-0000-0000-0000-000000000020',
+       '00000000-0000-0000-0000-000000000013',
+       '00000000-0000-0000-0000-000000000005','running');
+INSERT INTO worlds(id,game_id)
+VALUES('00000000-0000-0000-0000-000000000022',
+       '00000000-0000-0000-0000-000000000011');
+INSERT INTO world_instances(id,world_id,status)
+VALUES('00000000-0000-0000-0000-000000000023',
+       '00000000-0000-0000-0000-000000000022','running');
+INSERT INTO spatial_frames(id,world_id,dimensions,basis)
+VALUES('00000000-0000-0000-0000-000000000024',
+       '00000000-0000-0000-0000-000000000022',3,'{"axes":["x","y","z"]}');
+INSERT INTO execution_contexts(id,world_instance_id,module_id,status)
+VALUES('00000000-0000-0000-0000-000000000025',
+       '00000000-0000-0000-0000-000000000023',
+       '00000000-0000-0000-0000-000000000005','running');
+INSERT INTO authority_leases(resource_key,holder_context_id,epoch,expires_at)
+VALUES('character:00000000-0000-0000-0000-000000000007',
+       '00000000-0000-0000-0000-000000000020',1,now()+INTERVAL '1 minute');
+
+DO $$
+DECLARE
+  did_apply BOOLEAN;
+  epoch_after BIGINT;
+BEGIN
+  SELECT new_authority_epoch, was_applied
+    INTO epoch_after, did_apply
+    FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000027', 'travel-ci-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000015',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',1,
+      '00000000-0000-0000-0000-000000000001'
+    );
+  IF NOT did_apply OR epoch_after <> 2 THEN
+    RAISE EXCEPTION 'world travel was not applied with epoch 2';
+  END IF;
+  IF (SELECT count(*) FROM presences WHERE entity_id =
+      '00000000-0000-0000-0000-000000000007' AND active) <> 1 THEN
+    RAISE EXCEPTION 'one character has multiple active world presences';
+  END IF;
+  IF (SELECT world_instance_id FROM presences
+       WHERE entity_id='00000000-0000-0000-0000-000000000007' AND active)
+       <> '00000000-0000-0000-0000-000000000023'::uuid THEN
+    RAISE EXCEPTION 'character landed in wrong world';
+  END IF;
+  IF (SELECT holder_context_id FROM authority_leases
+       WHERE resource_key='character:00000000-0000-0000-0000-000000000007')
+       <> '00000000-0000-0000-0000-000000000025'::uuid THEN
+    RAISE EXCEPTION 'character authority did not move to destination context';
+  END IF;
+  SELECT was_applied INTO did_apply FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000027', 'travel-ci-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000015',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',1,
+      '00000000-0000-0000-0000-000000000001'
+    );
+  IF did_apply THEN RAISE EXCEPTION 'travel replay changed state'; END IF;
+  -- Returning home must advance the epoch; replaying the original travel
+  -- must report the original commit rather than today's fencing token.
+  SELECT new_authority_epoch, was_applied INTO epoch_after, did_apply
+  FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000030', 'travel-ci-return',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000013',
+      '00000000-0000-0000-0000-000000000014',
+      '00000000-0000-0000-0000-000000000020',2,
+      '00000000-0000-0000-0000-000000000001'
+  );
+  IF NOT did_apply OR epoch_after <> 3 THEN
+    RAISE EXCEPTION 'return travel did not advance epoch to 3';
+  END IF;
+  SELECT new_authority_epoch, was_applied INTO epoch_after, did_apply
+  FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000027', 'travel-ci-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000015',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',1,
+      '00000000-0000-0000-0000-000000000001'
+  );
+  IF did_apply OR epoch_after <> 2 THEN
+    RAISE EXCEPTION 'idempotent replay did not preserve original authority epoch';
+  END IF;
+  BEGIN
+    PERFORM * FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000028','travel-stale',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000015',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',1,
+      '00000000-0000-0000-0000-000000000001'
+    );
+    RAISE EXCEPTION 'stale travel should have failed';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+END $$;
+
 ROLLBACK;

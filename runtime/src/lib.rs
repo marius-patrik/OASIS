@@ -3,6 +3,9 @@
 //! obtain external geometry and submit authoritative interactions.
 
 pub mod render;
+pub mod universe;
+pub mod gateway;
+pub mod scheduler;
 
 use std::collections::{BTreeMap, BTreeSet};
 use oasis_contracts::{
