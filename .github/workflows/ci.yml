@@ -54,6 +54,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f migrations/0003_transfers.sql
           psql -v ON_ERROR_STOP=1 -f migrations/0004_world_travel.sql
           psql -v ON_ERROR_STOP=1 -f migrations/0005_native_checkpoints.sql
+          psql -v ON_ERROR_STOP=1 -f migrations/0006_authority_recovery.sql
       - name: Verify relational persistence and constraints
         run: psql -v ON_ERROR_STOP=1 -f tests/schema_smoke.sql
       - uses: dtolnay/rust-toolchain@stable
