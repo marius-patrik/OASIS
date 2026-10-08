@@ -353,6 +353,24 @@ BEGIN
   END IF;
 
   BEGIN
+    PERFORM * FROM persist_character_travel(
+      '00000000-0000-0000-0000-000000000040','snapshot-travel-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',3,
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000042',
+      '00000000-0000-0000-0000-000000000001',0,
+      '{"native":{"module":"fixture","value":999},"revision":7}'::jsonb
+    );
+    RAISE EXCEPTION 'changed idempotent checkpoint was accepted';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+  BEGIN
     -- An incorrect version must reject the WHOLE transfer, including new
     -- presence and authority. A savepoint is implicit in this PL/pgSQL block.
     PERFORM * FROM persist_character_travel(
