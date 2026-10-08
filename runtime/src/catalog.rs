@@ -101,9 +101,10 @@ impl AdapterRegistry for Catalog {
             capability.version == 0 {
             return Err(invalid("invalid capability type reference"));
         }
-        if self.capabilities.insert(key(&capability),module_id).is_some() {
+        if self.capabilities.contains_key(&key(&capability)) {
             return Err(invalid("duplicate capability declaration"));
         }
+        self.capabilities.insert(key(&capability),module_id);
         Ok(())
     }
 }
