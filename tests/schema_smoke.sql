@@ -107,4 +107,74 @@ BEGIN
   END;
 END $$;
 
+
+-- A second owner and inventory receive the exact same item, without
+-- duplicating it or replacing its native definition or state.
+INSERT INTO entities (id, definition_id, origin_module_id)
+VALUES ('00000000-0000-0000-0000-000000000016',
+        '00000000-0000-0000-0000-000000000006',
+        '00000000-0000-0000-0000-000000000005');
+INSERT INTO inventories (entity_id, owner_entity_id)
+VALUES ('00000000-0000-0000-0000-000000000016',
+        '00000000-0000-0000-0000-000000000016');
+
+DO $$
+DECLARE
+  changed BOOLEAN;
+  replayed BOOLEAN;
+BEGIN
+  SELECT was_applied INTO changed FROM transfer_item(
+    '00000000-0000-0000-0000-000000000017',
+    'ci-transfer-1',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000008',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000016',
+    '00000000-0000-0000-0000-000000000016',
+    NULL,
+    0,
+    '00000000-0000-0000-0000-000000000001'
+  );
+  IF NOT changed THEN RAISE EXCEPTION 'first transfer was not applied'; END IF;
+  SELECT was_applied INTO replayed FROM transfer_item(
+    '00000000-0000-0000-0000-000000000017',
+    'ci-transfer-1',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000008',
+    '00000000-0000-0000-0000-000000000007',
+    '00000000-0000-0000-0000-000000000016',
+    '00000000-0000-0000-0000-000000000016',
+    NULL,
+    0,
+    '00000000-0000-0000-0000-000000000001'
+  );
+  IF replayed THEN RAISE EXCEPTION 'duplicate transfer was applied twice'; END IF;
+  IF (SELECT owner_entity_id FROM ownerships
+       WHERE entity_id = '00000000-0000-0000-0000-000000000008')
+       <> '00000000-0000-0000-0000-000000000016' THEN
+    RAISE EXCEPTION 'wrong item owner after transfer';
+  END IF;
+  IF (SELECT count(*) FROM events WHERE transaction_id =
+      '00000000-0000-0000-0000-000000000017') <> 1 THEN
+    RAISE EXCEPTION 'transfer event is not unique';
+  END IF;
+  IF (SELECT revision FROM locations
+       WHERE entity_id='00000000-0000-0000-0000-000000000008') <> 1 THEN
+    RAISE EXCEPTION 'location revision incorrectly advanced';
+  END IF;
+  BEGIN
+    PERFORM * FROM transfer_item(
+      '00000000-0000-0000-0000-000000000018',
+      'ci-transfer-stale', '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000008',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000016',
+      '00000000-0000-0000-0000-000000000016',
+      NULL, 0, '00000000-0000-0000-0000-000000000001'
+    );
+    RAISE EXCEPTION 'stale owner accepted';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+END $$;
+
 ROLLBACK;
