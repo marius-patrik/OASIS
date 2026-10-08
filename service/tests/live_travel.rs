@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration,SystemTime};
 use oasis_contracts::{
-    ClockStep, ContractError, ContractResult, DefinitionRef, EntityView,
+    ClockStep, ContractError, ContractResult, EntityView,
     Id, InputIntent, ModuleDescriptor, NativeHandle, NativeModule,
     Revision, Snapshot, StepOutput, TypeRef, TypedValue, Value, WorldPort,
 };
