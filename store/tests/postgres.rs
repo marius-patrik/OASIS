@@ -89,6 +89,9 @@ fn durable_native_state_travels_between_worlds_without_replacing_the_engine() {
     assert_eq!(snapshot.binary_artifact,Some(id(0x4)));
     assert_eq!(snapshot.revision,Revision(7));
 
+    let mut tampered=outbound.clone();
+    tampered.native_state=state(999);
+    assert!(store.transfer_character(&tampered).is_err());
     let replay=store.transfer_character(&outbound).unwrap();
     assert!(!replay.applied);
     assert_eq!(replay.authority_epoch,2);
