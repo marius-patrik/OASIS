@@ -63,6 +63,10 @@ jobs:
         env:
           DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
         run: cargo test -p oasis-store --test postgres --locked -- --test-threads=1
+      - name: Recover committed native state in a new universe runtime
+        env:
+          DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
+        run: cargo test -p oasis-service --test postgres --locked -- --test-threads=1
 
   boundaries:
     name: Specification and adapter independence
