@@ -11,6 +11,7 @@ CREATE UNIQUE INDEX state_documents_entity_revision
 CREATE TABLE travel_checkpoints (
     transaction_id UUID PRIMARY KEY REFERENCES transactions(id),
     state_document_id UUID NOT NULL UNIQUE REFERENCES state_documents(id),
+    request_digest TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -44,12 +45,18 @@ DECLARE
     v_result RECORD;
     v_current_revision BIGINT;
     v_committed_revision BIGINT;
+    v_payload_digest TEXT;
+    v_original_digest TEXT;
 BEGIN
     IF p_expected_snapshot_revision < 0 OR p_snapshot IS NULL
        OR jsonb_typeof(p_snapshot) IS DISTINCT FROM 'object' THEN
         RAISE EXCEPTION 'native snapshot must be an object with nonnegative revision'
             USING ERRCODE = '22023';
     END IF;
+
+    v_payload_digest := md5(jsonb_build_array(
+        p_snapshot_id, p_snapshot_type_id, p_expected_snapshot_revision, p_snapshot
+    )::text);
 
     -- Invoked in the caller's SQL transaction. The lower-level routine locks
     -- the character's entity row, validates the authenticated session, fences
@@ -63,7 +70,8 @@ BEGIN
     );
 
     IF NOT v_result.was_applied THEN
-        SELECT doc.revision INTO v_committed_revision
+        SELECT doc.revision, ck.request_digest
+          INTO v_committed_revision, v_original_digest
           FROM travel_checkpoints ck
           JOIN state_documents doc ON doc.id = ck.state_document_id
          WHERE ck.transaction_id = v_result.result_transaction_id
@@ -71,6 +79,10 @@ BEGIN
         IF NOT FOUND THEN
             RAISE EXCEPTION 'existing transfer lacks a checkpoint'
                 USING ERRCODE = '40001';
+        END IF;
+        IF v_original_digest IS DISTINCT FROM v_payload_digest THEN
+            RAISE EXCEPTION 'idempotency key reused with different native state'
+                USING ERRCODE = '23505';
         END IF;
         RETURN QUERY SELECT v_result.result_transaction_id,
                             v_result.new_authority_epoch,
@@ -91,8 +103,8 @@ BEGIN
         p_snapshot_id, p_snapshot_type_id, p_character_id,
         p_snapshot, p_expected_snapshot_revision + 1
     );
-    INSERT INTO travel_checkpoints(transaction_id, state_document_id)
-    VALUES(v_result.result_transaction_id, p_snapshot_id);
+    INSERT INTO travel_checkpoints(transaction_id, state_document_id, request_digest)
+    VALUES(v_result.result_transaction_id, p_snapshot_id, v_payload_digest);
 
     RETURN QUERY SELECT v_result.result_transaction_id,
                         v_result.new_authority_epoch, TRUE,
