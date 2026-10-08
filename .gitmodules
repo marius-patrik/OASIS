@@ -1,0 +1,6 @@
+[submodule "engines/doom"]
+	path = engines/doom
+	url = https://github.com/sunsided/room.git
+[submodule "engines/cave-story"]
+	path = engines/cave-story
+	url = https://github.com/doukutsu-rs/doukutsu-rs.git
