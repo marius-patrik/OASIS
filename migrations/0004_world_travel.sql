@@ -51,8 +51,10 @@ BEGIN
           USING ERRCODE='23505';
     END IF;
     IF v_tx.status = 'committed' THEN
-        SELECT a.epoch INTO v_current_epoch FROM authority_leases a
-            WHERE a.resource_key = ('character:' || p_character_id::text);
+        -- Replay must return the epoch from the original committed event,
+        -- not the character's current epoch after subsequent world travel.
+        SELECT (e.payload->>'authority_epoch')::BIGINT INTO v_current_epoch
+          FROM events e WHERE e.transaction_id=v_tx.id;
         RETURN QUERY SELECT v_tx.id, v_current_epoch, FALSE;
         RETURN;
     END IF;
