@@ -41,6 +41,14 @@ pub struct SessionTicket {
     pub character_id: Id,
 }
 
+/// Durable authority resolved by a trusted storage provider. Clients never
+/// choose either the hosted world or the execution context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PersistedPlacement {
+    pub world_instance_id: Id,
+    pub authority_context_id: Id,
+}
+
 struct WorldShard {
     host: Host,
     contexts: BTreeMap<Id, Id>,
@@ -98,6 +106,42 @@ impl Universe {
         if entity.origin_module.is_none() { return Err(invalid("origin module required")); }
         if self.entities.contains_key(&entity.id) { return Err(invalid("entity already registered")); }
         self.entities.insert(entity.id, entity);
+        Ok(())
+    }
+
+    /// Cold-start restoration from an authoritative durable store. The
+    /// caller must verify the database authority lease and session before
+    /// passing a placement. No client input reaches this trusted API.
+    ///
+    /// The original native module remains the owner of entity logic, even
+    /// when the destination uses another world renderer or physics module.
+    pub fn recover_entity(
+        &mut self,
+        entity: EntityView,
+        snapshot: Option<&Snapshot>,
+        placement: Option<PersistedPlacement>,
+    ) -> ContractResult<()> {
+        if self.entities.contains_key(&entity.id) {
+            return Err(invalid("cannot restore already-loaded entity"));
+        }
+        let origin = entity.origin_module.ok_or_else(||invalid("origin module missing"))?;
+        if snapshot.is_some_and(|s|s.entity_id != entity.id) {
+            return Err(invalid("snapshot does not belong to entity"));
+        }
+        if let Some(placement) = placement {
+            let shard = self.worlds.get_mut(&placement.world_instance_id)
+                .ok_or(ContractError::NotFound(placement.world_instance_id))?;
+            let context = *shard.contexts.get(&origin)
+                .ok_or_else(||invalid("world has no native origin module"))?;
+            if context != placement.authority_context_id {
+                return Err(ContractError::StaleAuthority);
+            }
+            // Instantiation happens before either platform identity or
+            // presence becomes visible to network clients.
+            shard.host.instantiate(context,entity.clone(),snapshot)?;
+            self.presence.insert(entity.id,placement.world_instance_id);
+        }
+        self.entities.insert(entity.id,entity);
         Ok(())
     }
 
@@ -512,6 +556,60 @@ mod tests {
         assert!(runner.last_error().is_none());
         drop(runner);
         assert_eq!(shared.lock().unwrap().presence(Id(501)),Some(Id(10)));
+    }
+
+    #[test]
+    fn recovery_uses_native_origin_context_and_preserves_snapshot() {
+        let (mut universe,mut auth)=setup();
+        let recovered=entity(503,1);
+        let saved=Snapshot{
+            entity_id:Id(503),revision:Revision(9),binary_artifact:Some(Id(800)),
+            state:vec![TypedValue{
+                type_ref:TypeRef{
+                    namespace:"source".into(),name:"state".into(),version:1,
+                },
+                data:Value::Bytes(vec![0,1,2,255]),
+            }],
+        };
+        let forged=PersistedPlacement{
+            world_instance_id:Id(20),authority_context_id:Id(202),
+        };
+        assert!(matches!(
+            universe.recover_entity(recovered.clone(),Some(&saved),Some(forged)),
+            Err(ContractError::StaleAuthority),
+        ));
+        assert_eq!(universe.entity_count(),2);
+        assert_eq!(universe.presence(Id(503)),None);
+
+        universe.recover_entity(recovered.clone(),Some(&saved),Some(PersistedPlacement{
+            world_instance_id:Id(20),authority_context_id:Id(201),
+        })).unwrap();
+        let expiry=SystemTime::now()+Duration::from_secs(3600);
+        auth.0.insert("restored".into(),Principal{
+            user_id:Id(603),player_id:Id(703),
+            character_id:Id(503),expires_at:expiry,
+        });
+        let ticket=universe.connect(&auth,"restored").unwrap();
+        let actual=universe.observe(ticket).unwrap();
+        assert_eq!(actual.len(),1);
+        assert_eq!(actual[0].revision,Revision(9));
+        assert_eq!(actual[0].state,saved.state);
+        assert_eq!(actual[0].binary_artifact,Some(Id(800)));
+        assert_eq!(universe.presence(Id(503)),Some(Id(20)));
+        assert!(universe.recover_entity(recovered,Some(&saved),None).is_err());
+    }
+
+    #[test]
+    fn recovery_rejects_foreign_snapshots_and_allows_unplaced_characters() {
+        let (mut universe,_auth)=setup();
+        let other=Snapshot{
+            entity_id:Id(999),revision:Revision(0),
+            state:vec![],binary_artifact:None,
+        };
+        assert!(universe.recover_entity(entity(700,1),Some(&other),None).is_err());
+        universe.recover_entity(entity(700,1),None,None).unwrap();
+        assert_eq!(universe.presence(Id(700)),None);
+        assert_eq!(universe.entity_count(),3);
     }
 
 }
