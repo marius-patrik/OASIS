@@ -251,6 +251,7 @@ impl Universe {
         ids.into_iter().map(|id| shard.host.snapshot(id)).collect()
     }
 
+    pub fn has_world(&self, id: Id) -> bool { self.worlds.contains_key(&id) }
     pub fn world_count(&self) -> usize { self.worlds.len() }
     pub fn connected_count(&self) -> usize { self.active_connection.len() }
     pub fn entity_count(&self) -> usize { self.entities.len() }
@@ -482,6 +483,33 @@ mod tests {
         assert_eq!(send(&mut c,&mut cr,"INPUT genuine"),"OK queued");
         assert_eq!(send(&mut c,&mut cr,"QUIT"),"OK bye");
         assert_eq!(shared.lock().unwrap().presence(Id(501)),Some(Id(20)));
+    }
+
+    #[test]
+    fn server_scheduler_advances_native_world_without_client_driven_ticks() {
+        use crate::scheduler::WorldRunner;
+        use std::sync::{Arc, Mutex};
+        use std::time::Instant;
+
+        let (mut universe,auth)=setup();
+        let ticket=universe.connect(&auth,"first").unwrap();
+        universe.enter_world(ticket,Id(10)).unwrap();
+        universe.input(ticket,text_intent("move")).unwrap();
+        let shared=Arc::new(Mutex::new(universe));
+        let runner=WorldRunner::start(
+            Arc::clone(&shared),Id(10),Duration::from_millis(3),
+        ).unwrap();
+        let deadline=Instant::now()+Duration::from_secs(3);
+        let mut revision=Revision(0);
+        while Instant::now() < deadline {
+            revision=shared.lock().unwrap().observe(ticket).unwrap()[0].revision;
+            if revision.0 > 0 { break; }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(revision,Revision(1));
+        assert!(runner.last_error().is_none());
+        drop(runner);
+        assert_eq!(shared.lock().unwrap().presence(Id(501)),Some(Id(10)));
     }
 
 }
