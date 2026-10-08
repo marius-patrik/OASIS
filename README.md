@@ -45,6 +45,13 @@ authoritative interaction contracts through which they can coexist.
   [Real database tests](service/tests/live_travel.rs) inject a destination
   engine failure, recover from the committed checkpoint in a new runtime,
   and verify successful return travel.
+- [Durable live travel](service/src/lib.rs) snapshots the original native
+  module, commits checkpoint and world authority atomically in PostgreSQL,
+  then activates the same module in the destination world. Failed engine
+  transitions quarantine native state for restart recovery. Real
+  [PostgreSQL regression tests](service/tests/live_travel.rs) inject
+  destination failure, verify no source duplication, recover the checkpoint,
+  and successfully travel back.
 - [Trusted runtime recovery service](service/src/lib.rs) verifies a persisted
   session, reads its current native state and authoritative world placement,
   and restores the original engine module through the generic runtime.
