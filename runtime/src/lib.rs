@@ -2,6 +2,8 @@
 //! Engine modules retain simulation and rendering logic and use WorldPort to
 //! obtain external geometry and submit authoritative interactions.
 
+pub mod render;
+
 use std::collections::{BTreeMap, BTreeSet};
 use oasis_contracts::{
     AuthorityStamp, ClockStep, ContractError, ContractResult, EntityView,
