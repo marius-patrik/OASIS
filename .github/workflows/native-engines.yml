@@ -1,0 +1,62 @@
+name: Native Engine Sources
+
+on:
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - .gitmodules
+      - engines/**
+      - .github/workflows/native-engines.yml
+  pull_request:
+    paths:
+      - .gitmodules
+      - engines/**
+      - .github/workflows/native-engines.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-source:
+    name: Source validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: doom
+            path: engines/doom
+            revision: 904acac5fb7d89d7545082c3fab71408176d2404
+            manifest: engines/doom/room/Cargo.toml
+          - name: cave-story
+            path: engines/cave-story
+            revision: 7e6870e55f072e3f056dc1eef3974a1af26c7aae
+            manifest: engines/cave-story/Cargo.toml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux libraries for source builds
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev
+      - name: Verify pin and native source
+        env:
+          GAME_PATH: ${{ matrix.path }}
+          EXPECTED_REVISION: ${{ matrix.revision }}
+          MANIFEST_PATH: ${{ matrix.manifest }}
+        run: |
+          test "$(git -C "$GAME_PATH" rev-parse HEAD)" = "$EXPECTED_REVISION"
+          test -f "$MANIFEST_PATH"
+      - name: Native source compiles independently
+        env:
+          GAME_NAME: ${{ matrix.name }}
+        run: |
+          if [ "$GAME_NAME" = "doom" ]; then
+            cargo check --manifest-path engines/doom/room/Cargo.toml --lib
+          else
+            cargo check --manifest-path engines/cave-story/Cargo.toml --lib --no-default-features
+          fi
