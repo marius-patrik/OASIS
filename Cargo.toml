@@ -1,5 +1,6 @@
 [workspace]
 members = ["contracts", "runtime"]
+exclude = ["engines/doom", "engines/cave-story"]
 resolver = "2"
 
 [workspace.package]
