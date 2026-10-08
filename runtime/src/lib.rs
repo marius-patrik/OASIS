@@ -4,6 +4,7 @@
 
 pub mod render;
 pub mod universe;
+pub mod gateway;
 
 use std::collections::{BTreeMap, BTreeSet};
 use oasis_contracts::{
