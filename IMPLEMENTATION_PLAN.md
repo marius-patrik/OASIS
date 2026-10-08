@@ -16,9 +16,9 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 - [x] Apply core, indexes, custody and travel migrations to PostgreSQL 16 through CI.
 - [ ] Build registry validation (namespace/version/payload schema) and a guarded data-service API; game modules cannot directly write tables.
-- [ ] Build identity, players, characters, items, definitions, component/state, relationships, worlds, and native module registration.
+- [ ] Implemented read APIs for persisted identity/session, entity definition, components and native snapshots; complete guarded create/update data-service APIs remain open.
 - [x] Implement SQL transactional custody/ownership moves, journal/idempotency, optimistic revision checks, and monotonic lease fencing; Rust-to-SQL integration is still open.
-- [ ] Exercise concurrency/race/crash tests using *synthetic* data only.
+- [ ] PostgreSQL smoke tests and Rust integration tests now cover two-way world travel, native snapshots, replay and stale-revision rollback; real concurrent process-crash recovery and data-service authorization remain open.
 
 **Exit:** SQL and application-level invariant tests green; a user, character, world, original item definition, and arbitrary game-specific typed components persist and round-trip.
 
@@ -75,7 +75,7 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 ## Verified implementation baseline (2026-10-08)
 
 - Universal Rust workspace, adapter catalog, native-module runtime, authority fencing, clock scheduling, render composition planning, and synthetic conformance tests compile and pass GitHub Actions.
-- PostgreSQL schema, custody transfer and authoritative presence-travel migrations execute and pass transactional smoke tests in CI. The Rust world coordinator is **not yet backed by this persistent store**.
+- PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; connecting this store to the live world coordinator and crash-safe handoff remains open.
 - The DOOM and Cave Story Rust sources are pinned as Git submodules and compile independently in native source CI. Their OASIS adapters do not yet exist.
 - The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
 - Final black-box interoperability has **not** been attempted; cross-game code must remain absent.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["contracts", "runtime"]
+members = ["contracts", "runtime", "store"]
 exclude = ["engines/doom", "engines/cave-story"]
 resolver = "2"
 

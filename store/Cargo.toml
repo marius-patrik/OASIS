@@ -1,0 +1,12 @@
+[package]
+name = "oasis-store"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "PostgreSQL persistence boundary for OASIS native game state"
+
+[dependencies]
+oasis-contracts = { path = "../contracts" }
+postgres = { version = "0.19", features = ["with-uuid-1", "with-serde_json-1"] }
+uuid = { version = "1", features = ["v4"] }
+serde_json = "1"
