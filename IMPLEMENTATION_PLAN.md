@@ -75,7 +75,9 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 ## Verified implementation baseline (2026-10-08)
 
 - Universal Rust workspace, adapter catalog, native-module runtime, authority fencing, clock scheduling, render composition planning, and synthetic conformance tests compile and pass GitHub Actions.
-- PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; cold-start state restoration is now available through `oasis-service`, while live travel coordination, expired-lease reclamation and crash-safe handoff remain open.
+- PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; cold-start state restoration is now available through `oasis-service`, and expired leases can be reclaimed by a restarted native context; live travel
+  coordination, lease-enforced server ticking and full crash-safe handoff
+  remain open.
 - The DOOM and Cave Story Rust sources are pinned as Git submodules and compile independently in native source CI. Their OASIS adapters do not yet exist.
 - The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
 - Final black-box interoperability has **not** been attempted; cross-game code must remain absent.
