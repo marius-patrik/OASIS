@@ -38,7 +38,10 @@ authoritative interaction contracts through which they can coexist.
   session, reads its current native state and authoritative world placement,
   and restores the original engine module through the generic runtime.
   Expired/missing authority is rejected rather than assuming an empty world.
-  CI restores a character from PostgreSQL into a fresh runtime.
+  A restarted process can reclaim an **expired** lease using the authenticated
+  session, preserving original module/world identity while advancing fencing
+  epochs. CI restores a character from PostgreSQL into fresh runtimes,
+  including after simulating a dead server.
 - [GitHub Actions CI](.github/workflows/ci.yml) compiling the Rust workspace,
   running module-level tests, applying PostgreSQL migrations and checking constraints.
 
@@ -54,6 +57,7 @@ psql -v ON_ERROR_STOP=1 -f migrations/0002_indexes.sql
 psql -v ON_ERROR_STOP=1 -f migrations/0003_transfers.sql
 psql -v ON_ERROR_STOP=1 -f migrations/0004_world_travel.sql
 psql -v ON_ERROR_STOP=1 -f migrations/0005_native_checkpoints.sql
+psql -v ON_ERROR_STOP=1 -f migrations/0006_authority_recovery.sql
 psql -v ON_ERROR_STOP=1 -f tests/schema_smoke.sql
 psql -v ON_ERROR_STOP=1 -f tests/store_fixture.sql
 DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo test -p oasis-store --test postgres
@@ -61,13 +65,15 @@ DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo te
 ```
 
 **Status:** This is a working foundation, **not yet a complete MMO**.
-The **actual DOOM and Cave Story adapters**, crash-safe **live** world-travel orchestration and lease reclamation,
+The **actual DOOM and Cave Story adapters**, crash-safe **live** world-travel orchestration and server-side lease-enforced ticking,
 production networking/authentication, scalable
 interest-managed replication, and GPU compositing remain unimplemented.
 The PostgreSQL store and recovery service provide real persistent reads,
 transactional writes, and cold-start native-state recovery.
 However, **live travel is not yet orchestrated atomically with native module
-lifecycle**, and expired leases cannot yet be reclaimed. The TCP gateway uses injected authentication and returns snapshot
+lifecycle**. Expired leases can be reclaimed in PostgreSQL, but currently
+running world shards do not yet enforce SQL lease expiration on every
+simulation tick, so SQL fencing alone is not complete distributed safety. The TCP gateway uses injected authentication and returns snapshot
 identifiers/revisions, not complete game-ready replicated state.
 Cross-game interactions are final black-box verification criteria,
 never hard-coded game-pair features.

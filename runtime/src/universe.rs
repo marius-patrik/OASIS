@@ -297,6 +297,11 @@ impl Universe {
         ids.into_iter().map(|id| shard.host.snapshot(id)).collect()
     }
 
+    pub fn has_entity(&self, id: Id) -> bool { self.entities.contains_key(&id) }
+    pub fn context_for(&self, world: Id, origin_module: Id) -> Option<Id> {
+        self.worlds.get(&world)
+            .and_then(|shard|shard.contexts.get(&origin_module).copied())
+    }
     pub fn has_world(&self, id: Id) -> bool { self.worlds.contains_key(&id) }
     pub fn world_count(&self) -> usize { self.worlds.len() }
     pub fn connected_count(&self) -> usize { self.active_connection.len() }

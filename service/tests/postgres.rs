@@ -120,4 +120,43 @@ fn committed_native_state_is_restored_to_original_engine_module() {
         loader.restore_session(&mut universe,Id(0x21)),
         Err(RecoveryError::Runtime(_)),
     ));
+
+    // Simulate the first world-server process terminating. A new process
+    // registers the SAME native source module with a NEW execution context.
+    let mut replacement=Universe::new();
+    replacement.add_world(presence.world_instance_id).unwrap();
+    let next_context=Id(0x60);
+    replacement.add_module(
+        presence.world_instance_id,next_context,
+        Box::new(NativeFixture::new(next_context)),
+    ).unwrap();
+    assert!(matches!(
+        loader.reclaim_expired_session(&mut replacement,Id(0x21),next_context),
+        Err(RecoveryError::LiveAuthority(_)),
+    ));
+    // Expire the prior lease (equivalent to a failed heartbeat), then a
+    // genuinely new server context can claim it, with a higher epoch.
+    let mut administrator=postgres::Client::connect(&url,postgres::NoTls).unwrap();
+    administrator.batch_execute(
+        "INSERT INTO execution_contexts(id,world_instance_id,module_id,status)
+         VALUES('00000000-0000-0000-0000-000000000060',
+                '00000000-0000-0000-0000-000000000013',
+                '00000000-0000-0000-0000-000000000005','running');
+         UPDATE authority_leases SET expires_at=now()-INTERVAL '1 second'
+          WHERE resource_key='character:00000000-0000-0000-0000-000000000007';"
+    ).unwrap();
+    let rebooted=loader.reclaim_expired_session(
+        &mut replacement,Id(0x21),next_context,
+    ).unwrap();
+    assert_eq!(rebooted.world_instance_id,presence.world_instance_id);
+    assert_eq!(rebooted.authority_epoch,presence.authority_epoch+1);
+    assert_eq!(rebooted.native_revision,Some(8));
+    assert_eq!(rebooted.durable_revision,Some(2));
+    assert_eq!(store.active_presence(Id(0x7)).unwrap().unwrap()
+        .authority_context_id,next_context);
+    let recovered_ticket=replacement.connect(
+        &VerifiedSession(&store),"test-authenticated-session",
+    ).unwrap();
+    let recovered_snapshots=replacement.observe(recovered_ticket).unwrap();
+    assert_eq!(recovered_snapshots[0].state,persisted.state);
 }

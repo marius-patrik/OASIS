@@ -289,6 +289,7 @@ dependencies = [
  "oasis-contracts",
  "oasis-runtime",
  "oasis-store",
+ "postgres",
 ]
 
 [[package]]

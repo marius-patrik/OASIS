@@ -9,3 +9,6 @@ description = "Trusted PostgreSQL-to-native-runtime recovery coordinator"
 oasis-contracts = { path = "../contracts" }
 oasis-runtime = { path = "../runtime" }
 oasis-store = { path = "../store" }
+
+[dev-dependencies]
+postgres = "0.19"
