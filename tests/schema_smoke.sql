@@ -252,6 +252,38 @@ BEGIN
       '00000000-0000-0000-0000-000000000001'
     );
   IF did_apply THEN RAISE EXCEPTION 'travel replay changed state'; END IF;
+  -- Returning home must advance the epoch; replaying the original travel
+  -- must report the original commit rather than today's fencing token.
+  SELECT new_authority_epoch, was_applied INTO epoch_after, did_apply
+  FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000030', 'travel-ci-return',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000013',
+      '00000000-0000-0000-0000-000000000014',
+      '00000000-0000-0000-0000-000000000020',2,
+      '00000000-0000-0000-0000-000000000001'
+  );
+  IF NOT did_apply OR epoch_after <> 3 THEN
+    RAISE EXCEPTION 'return travel did not advance epoch to 3';
+  END IF;
+  SELECT new_authority_epoch, was_applied INTO epoch_after, did_apply
+  FROM transfer_character_presence(
+      '00000000-0000-0000-0000-000000000027', 'travel-ci-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000015',
+      '00000000-0000-0000-0000-000000000026',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',1,
+      '00000000-0000-0000-0000-000000000001'
+  );
+  IF did_apply OR epoch_after <> 2 THEN
+    RAISE EXCEPTION 'idempotent replay did not preserve original authority epoch';
+  END IF;
   BEGIN
     PERFORM * FROM transfer_character_presence(
       '00000000-0000-0000-0000-000000000028','travel-stale',
