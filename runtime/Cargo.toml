@@ -1,0 +1,9 @@
+[package]
+name = "oasis-runtime"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Engine-independent OASIS host for native game modules"
+
+[dependencies]
+oasis-contracts = { path = "../contracts" }
