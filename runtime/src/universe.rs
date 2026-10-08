@@ -59,6 +59,18 @@ pub struct SimulationLease {
     pub epoch: u64,
 }
 
+/// Prepared entirely inside the source module. No SQL state changes yet.
+#[derive(Clone, Debug)]
+pub struct PreparedTransfer {
+    pub entity_id: Id,
+    pub source_world_id: Id,
+    pub source_context_id: Id,
+    pub destination_world_id: Id,
+    pub destination_context_id: Id,
+    pub authority_epoch: u64,
+    pub native_snapshot: Snapshot,
+}
+
 struct WorldShard {
     host: Host,
     contexts: BTreeMap<Id, Id>,
@@ -80,6 +92,7 @@ pub struct Universe {
     entities: BTreeMap<Id, EntityView>,
     presence: BTreeMap<Id, Id>,
     authority_epochs: BTreeMap<Id, u64>,
+    poisoned_worlds: BTreeSet<Id>,
     connections: BTreeMap<u64, Principal>,
     active_connection: BTreeMap<Id, u64>,
     next_connection: u64,
@@ -208,6 +221,104 @@ impl Universe {
         self.presence.get(&character).copied()
     }
 
+    /// Prepare native state and verify both independently registered contexts
+    /// without mutating the authoritative world or the SQL database.
+    pub fn prepare_live_transfer(
+        &mut self, ticket: SessionTicket, destination: Id,
+    ) -> ContractResult<PreparedTransfer> {
+        self.verify(ticket)?;
+        let entity = self.entities.get(&ticket.character_id)
+            .ok_or(ContractError::NotFound(ticket.character_id))?;
+        let origin = entity.origin_module.ok_or_else(||invalid("origin module missing"))?;
+        let source = *self.presence.get(&ticket.character_id)
+            .ok_or(ContractError::StaleAuthority)?;
+        if source == destination { return Err(invalid("already in destination world")); }
+        if self.poisoned_worlds.contains(&source) ||
+           self.poisoned_worlds.contains(&destination) {
+            return Err(ContractError::StaleAuthority);
+        }
+        let source_context=*self.worlds.get(&source)
+            .and_then(|shard|shard.contexts.get(&origin))
+            .ok_or(ContractError::StaleAuthority)?;
+        let dest_context=*self.worlds.get(&destination)
+            .and_then(|shard|shard.contexts.get(&origin))
+            .ok_or_else(||invalid("destination does not host originating module"))?;
+        let epoch=*self.authority_epochs.get(&ticket.character_id)
+            .ok_or(ContractError::StaleAuthority)?;
+        let native_snapshot=self.worlds.get_mut(&source)
+            .ok_or(ContractError::NotFound(source))?
+            .host.snapshot(ticket.character_id)?;
+        Ok(PreparedTransfer {
+            entity_id:ticket.character_id,
+            source_world_id:source,source_context_id:source_context,
+            destination_world_id:destination,destination_context_id:dest_context,
+            authority_epoch:epoch,native_snapshot,
+        })
+    }
+
+    /// Called after the durable SQL transaction commits. There is no
+    /// database rollback at this point. Failed native instantiation must
+    /// quarantine its world; checkpoint recovery is the only safe retry.
+    pub fn finalize_committed_transfer(
+        &mut self, ticket: SessionTicket, prepared: &PreparedTransfer,
+        committed_epoch: u64,
+    ) -> ContractResult<()> {
+        self.verify(ticket)?;
+        if prepared.entity_id!=ticket.character_id ||
+            committed_epoch<=prepared.authority_epoch ||
+            self.presence.get(&prepared.entity_id)!=Some(&prepared.source_world_id) ||
+            self.authority_epochs.get(&prepared.entity_id)!=Some(&prepared.authority_epoch)
+        {
+            self.quarantine_transfer(prepared);
+            return Err(ContractError::StaleAuthority);
+        }
+        let entity=self.entities.get(&prepared.entity_id)
+            .cloned().ok_or(ContractError::NotFound(prepared.entity_id))?;
+        if let Err(error)=self.worlds.get_mut(&prepared.source_world_id)
+            .ok_or(ContractError::NotFound(prepared.source_world_id))?
+            .host.remove(prepared.entity_id)
+        {
+            self.quarantine_transfer(prepared);
+            return Err(error);
+        }
+        let result=self.worlds.get_mut(&prepared.destination_world_id)
+            .ok_or(ContractError::NotFound(prepared.destination_world_id))?
+            .host.instantiate(
+                prepared.destination_context_id,entity,
+                Some(&prepared.native_snapshot),
+            );
+        if let Err(error)=result {
+            self.poisoned_worlds.insert(prepared.destination_world_id);
+            self.presence.remove(&prepared.entity_id);
+            self.authority_epochs.remove(&prepared.entity_id);
+            return Err(error);
+        }
+        if let Some(shard)=self.worlds.get_mut(&prepared.source_world_id) {
+            shard.pending.retain(|intent|intent.controller_entity_id!=prepared.entity_id);
+        }
+        self.presence.insert(prepared.entity_id,prepared.destination_world_id);
+        self.authority_epochs.insert(prepared.entity_id,committed_epoch);
+        Ok(())
+    }
+
+    /// Fail closed after an ambiguous SQL outcome or a native transition
+    /// failure. If native teardown fails, poison its entire simulation shard
+    /// to prevent execution of the stale character by another module tick.
+    pub fn quarantine_transfer(&mut self, prepared: &PreparedTransfer) {
+        if let Some(shard)=self.worlds.get_mut(&prepared.source_world_id) {
+            if shard.host.remove(prepared.entity_id).is_err() {
+                self.poisoned_worlds.insert(prepared.source_world_id);
+            }
+            shard.pending.retain(|intent|intent.controller_entity_id!=prepared.entity_id);
+        }
+        self.presence.remove(&prepared.entity_id);
+        self.authority_epochs.remove(&prepared.entity_id);
+    }
+
+    pub fn is_world_quarantined(&self, world: Id) -> bool {
+        self.poisoned_worlds.contains(&world)
+    }
+
     /// Preflight target module, snapshot origin state, detach origin and
     /// instantiate in destination. A failed target instantiation reattaches
     /// the origin; multi-process durable handoff requires the SQL store.
@@ -273,6 +384,9 @@ impl Universe {
     /// modules receive only input for entities whose source module they own.
     pub(crate) fn step_world(&mut self, world: Id, delta_nanos: u64)
         -> ContractResult<Vec<StepOutput>> {
+        if self.poisoned_worlds.contains(&world) {
+            return Err(ContractError::StaleAuthority);
+        }
         if delta_nanos == 0 { return Err(invalid("simulation delta must be positive")); }
         let shard = self.worlds.get_mut(&world).ok_or(ContractError::NotFound(world))?;
         let next_tick = shard.tick.checked_add(1)
@@ -316,6 +430,9 @@ impl Universe {
     /// unless *every* participating entity has its own valid fencing epoch.
     /// Validate all claims before invoking any native module's world step.
     pub fn simulation_leases(&self, world: Id) -> ContractResult<Vec<SimulationLease>> {
+        if self.poisoned_worlds.contains(&world) {
+            return Err(ContractError::StaleAuthority);
+        }
         let shard = self.worlds.get(&world).ok_or(ContractError::NotFound(world))?;
         self.presence.iter().filter(|(_,w)|**w==world).map(|(entity,_)| {
             let origin = self.entities.get(entity).and_then(|e|e.origin_module)
