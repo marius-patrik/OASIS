@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use oasis_contracts::{
     AuthorityStamp, ClockStep, ContractError, ContractResult, EntityView,
     FrameMap, Geometry, GeometryRequest, GeometryResult, Id, InputIntent,
-    InteractionDisposition, InteractionReceiver, InteractionRequest,
+    InteractionReceiver, InteractionRequest,
     InteractionResult, InteractionTarget, NativeHandle, NativeModule,
     Revision, Snapshot, SpatialHit, SpatialQuery, StepOutput, WorldPort,
 };
