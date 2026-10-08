@@ -14,7 +14,7 @@ use std::sync::Arc;
 use oasis_contracts::{ContractError, ContractResult, Id};
 use oasis_runtime::universe::{PersistedPlacement, SimulationLease, Universe};
 use oasis_runtime::scheduler::TickAuthorizer;
-use oasis_store::{DurableWorldStore, StoreError};
+use oasis_store::{DurableWorldStore, StoreError, TravelCommand, TravelReceipt};
 
 #[derive(Debug)]
 pub enum RecoveryError {
@@ -84,6 +84,112 @@ impl TickAuthorizer for PostgresTickAuthorizer {
             return Err(ContractError::StaleAuthority);
         }
         Ok(())
+    }
+}
+
+/// One player-initiated live transfer. Every identifier is generated or
+/// validated by trusted server code; client packets never supply authority
+/// epochs or execution contexts.
+#[derive(Clone, Debug)]
+pub struct LiveTravelRequest {
+    pub session_id: Id,
+    pub destination_world_id: Id,
+    pub destination_frame_id: Id,
+    pub destination_presence_id: Id,
+    pub transaction_id: Id,
+    pub idempotency_key: String,
+    pub snapshot_id: Id,
+    pub snapshot_type_id: Id,
+    pub event_type_id: Id,
+}
+
+/// Serializes a single in-process source snapshot with the SQL handoff.
+///
+/// The caller must hold the Universe's exclusive mutex while calling this
+/// method: native ticks and input must not interleave with SQL commit.
+/// Remote server instances are fenced by their own per-tick DB checks.
+pub struct LiveTravelService<'a> {
+    store: &'a dyn DurableWorldStore,
+}
+impl<'a> LiveTravelService<'a> {
+    pub fn new(store: &'a dyn DurableWorldStore) -> Self { Self { store } }
+
+    pub fn transfer(
+        &self,
+        universe: &mut Universe,
+        ticket: oasis_runtime::universe::SessionTicket,
+        request: &LiveTravelRequest,
+    ) -> Result<TravelReceipt, RecoveryError> {
+        let authorized=self.store.load_session(request.session_id)?
+            .ok_or(RecoveryError::InvalidSession)?;
+        if authorized.character_id!=ticket.character_id {
+            return Err(RecoveryError::InvalidSession);
+        }
+        let prepared=universe.prepare_live_transfer(ticket,request.destination_world_id)?;
+        let presence=self.store.active_presence(ticket.character_id)?
+            .ok_or(RecoveryError::MissingAuthority(ticket.character_id))?;
+        if presence.world_instance_id!=prepared.source_world_id
+            || presence.authority_context_id!=prepared.source_context_id
+            || presence.authority_epoch!=prepared.authority_epoch
+        {
+            universe.quarantine_transfer(&prepared);
+            return Err(RecoveryError::Runtime(ContractError::StaleAuthority));
+        }
+        let revision=self.store.latest_state(ticket.character_id)?
+            .map_or(0,|(revision,_)|revision);
+        let command=TravelCommand{
+            transaction_id:request.transaction_id,
+            idempotency_key:request.idempotency_key.clone(),
+            session_id:request.session_id,
+            character_id:ticket.character_id,
+            expected_presence_id:Some(presence.presence_id),
+            destination_presence_id:request.destination_presence_id,
+            destination_world_id:request.destination_world_id,
+            destination_frame_id:request.destination_frame_id,
+            destination_context_id:prepared.destination_context_id,
+            expected_authority_epoch:prepared.authority_epoch,
+            event_type_id:request.event_type_id,
+            snapshot_id:request.snapshot_id,
+            snapshot_type_id:request.snapshot_type_id,
+            expected_snapshot_revision:revision,
+            native_state:prepared.native_snapshot.clone(),
+        };
+        // The SQL procedure commits native state + authority + location
+        // atomically. An ambiguous transport failure quarantines native state
+        // even when the database transaction may have rolled back.
+        let receipt=match self.store.transfer_character(&command) {
+            Ok(receipt)=>receipt,
+            Err(error)=>{
+                universe.quarantine_transfer(&prepared);
+                return Err(RecoveryError::Storage(error));
+            }
+        };
+        let latest=match self.store.active_presence(ticket.character_id) {
+            Ok(Some(latest))=>latest,
+            Ok(None)=>{
+                universe.quarantine_transfer(&prepared);
+                return Err(RecoveryError::MissingAuthority(ticket.character_id));
+            }
+            Err(error)=>{
+                universe.quarantine_transfer(&prepared);
+                return Err(RecoveryError::Storage(error));
+            }
+        };
+        if latest.world_instance_id!=prepared.destination_world_id
+            || latest.authority_context_id!=prepared.destination_context_id
+            || latest.authority_epoch!=receipt.authority_epoch
+            || latest.presence_id!=request.destination_presence_id
+        {
+            universe.quarantine_transfer(&prepared);
+            return Err(RecoveryError::Runtime(ContractError::StaleAuthority));
+        }
+        // SQL is already committed. Never revert the durable transfer merely
+        // because the destination native module cannot instantiate: the
+        // runtime quarantines the affected shard for checkpoint recovery.
+        universe.finalize_committed_transfer(
+            ticket,&prepared,receipt.authority_epoch
+        )?;
+        Ok(receipt)
     }
 }
 

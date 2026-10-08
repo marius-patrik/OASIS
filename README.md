@@ -37,6 +37,21 @@ authoritative interaction contracts through which they can coexist.
   engine snapshots; native state is persisted using a lossless tagged codec.
   [Database integration tests](store/tests/postgres.rs) exercise two-way
   travel, recovery and rejected stale updates against real PostgreSQL.
+- [Live native world travel](service/src/lib.rs) snapshots original source
+  game logic under the authoritative Universe mutex, commits native state,
+  world presence and fencing epoch through PostgreSQL, and activates that
+  same origin module in the destination world. Failed or ambiguous commits
+  quarantine the affected native state instead of executing a duplicate.
+  [Real database tests](service/tests/live_travel.rs) inject a destination
+  engine failure, recover from the committed checkpoint in a new runtime,
+  and verify successful return travel.
+- [Durable live travel](service/src/lib.rs) snapshots the original native
+  module, commits checkpoint and world authority atomically in PostgreSQL,
+  then activates the same module in the destination world. Failed engine
+  transitions quarantine native state for restart recovery. Real
+  [PostgreSQL regression tests](service/tests/live_travel.rs) inject
+  destination failure, verify no source duplication, recover the checkpoint,
+  and successfully travel back.
 - [Trusted runtime recovery service](service/src/lib.rs) verifies a persisted
   session, reads its current native state and authoritative world placement,
   and restores the original engine module through the generic runtime.
@@ -68,16 +83,18 @@ DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo te
 ```
 
 **Status:** This is a working foundation, **not yet a complete MMO**.
-The **actual DOOM and Cave Story adapters**, crash-safe **live** world-travel orchestration and server-side lease-enforced ticking,
+The **actual DOOM and Cave Story adapters**, distributed live-travel orchestration across multiple server processes,
+production networking and client authentication,
 production networking/authentication, scalable
 interest-managed replication, and GPU compositing remain unimplemented.
 The PostgreSQL store and recovery service provide real persistent reads,
 transactional writes, and cold-start native-state recovery.
-However, **live travel is not yet orchestrated atomically with native module
-lifecycle**. The production scheduler now validates stored leases on every
-tick; however, a lease may change while native logic is already executing,
-so a distributed write-commit fence and bounded simulation cancellation are
-still required for complete multi-server safety. The TCP gateway uses injected authentication and returns snapshot
+Live travel is atomic at the SQL layer and coordinated with in-process native
+state transitions. Failed engine transitions are quarantined and can be
+restored from the committed native checkpoint. **Distributed** live travel
+between separate server processes remains incomplete, and long-running
+native steps and externally committed effects need additional fencing
+and cancellation to establish multi-server safety. The TCP gateway uses injected authentication and returns snapshot
 identifiers/revisions, not complete game-ready replicated state.
 Cross-game interactions are final black-box verification criteria,
 never hard-coded game-pair features.

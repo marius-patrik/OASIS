@@ -60,6 +60,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Prepare independent PostgreSQL runtime test fixture
         run: psql -v ON_ERROR_STOP=1 -f tests/store_fixture.sql
+      - name: Clone clean native travel fixture for isolated failure recovery test
+        run: createdb --template oasis oasis_live
       - name: Run Rust-to-PostgreSQL real travel and recovery tests
         env:
           DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
@@ -68,6 +70,10 @@ jobs:
         env:
           DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis"
         run: cargo test -p oasis-service --test postgres --locked -- --test-threads=1
+      - name: Verify crash-safe native transfer and quarantine
+        env:
+          DATABASE_URL: "host=localhost port=5432 user=oasis password=oasis_ci dbname=oasis_live"
+        run: cargo test -p oasis-service --test live_travel --locked -- --test-threads=1
 
   boundaries:
     name: Specification and adapter independence
