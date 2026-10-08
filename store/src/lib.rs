@@ -42,6 +42,7 @@ pub struct ActivePresence {
     pub frame_id: Id,
     pub authority_context_id: Id,
     pub authority_epoch: u64,
+    pub lease_expires_at: SystemTime,
 }
 
 #[derive(Clone, Debug)]
@@ -77,7 +78,15 @@ pub struct TravelReceipt {
 pub trait DurableWorldStore: Send + Sync {
     fn load_session(&self, session_id: Id) -> StoreResult<Option<StoredSession>>;
     fn load_entity(&self, entity_id: Id) -> StoreResult<Option<EntityView>>;
+    /// Read persisted world location even if its lease has expired.
+    fn recorded_presence(&self, entity_id: Id) -> StoreResult<Option<ActivePresence>>;
+    /// Returns only live, nonexpired authority.
     fn active_presence(&self, entity_id: Id) -> StoreResult<Option<ActivePresence>>;
+    fn renew_authority(&self, session: Id, character: Id, context: Id, epoch: u64)
+        -> StoreResult<u64>;
+    fn reclaim_expired_authority(
+        &self, session: Id, character: Id, context: Id, epoch: u64,
+    ) -> StoreResult<u64>;
     fn latest_state(&self, entity_id: Id) -> StoreResult<Option<(u64, Snapshot)>>;
     fn transfer_character(&self, command: &TravelCommand) -> StoreResult<TravelReceipt>;
 }
@@ -156,12 +165,13 @@ impl DurableWorldStore for PostgresStore {
         }))
     }
 
-    fn active_presence(&self, entity_id: Id) -> StoreResult<Option<ActivePresence>> {
+    fn recorded_presence(&self, entity_id: Id) -> StoreResult<Option<ActivePresence>> {
         let resource_key=format!("character:{}",to_uuid(entity_id));
         let row=self.connection()?.query_opt(
-            "SELECT p.id,p.world_instance_id,p.frame_id,a.holder_context_id,a.epoch
+            "SELECT p.id,p.world_instance_id,p.frame_id,a.holder_context_id,
+                    a.epoch,a.expires_at
                FROM presences p JOIN authority_leases a ON a.resource_key=$2
-              WHERE p.entity_id=$1 AND p.active AND a.expires_at>now()",
+              WHERE p.entity_id=$1 AND p.active",
             &[&to_uuid(entity_id),&resource_key],
         )?;
         let Some(row)=row else{return Ok(None)};
@@ -172,7 +182,37 @@ impl DurableWorldStore for PostgresStore {
             frame_id:from_uuid(row.get(2)),
             authority_context_id:from_uuid(row.get(3)),
             authority_epoch:u64::try_from(epoch)?,
+            lease_expires_at:row.get(5),
         }))
+    }
+
+    fn active_presence(&self, entity_id: Id) -> StoreResult<Option<ActivePresence>> {
+        Ok(self.recorded_presence(entity_id)?
+            .filter(|p|p.lease_expires_at>SystemTime::now()))
+    }
+
+    fn renew_authority(
+        &self, session: Id, character: Id, context: Id, epoch: u64,
+    ) -> StoreResult<u64> {
+        let expected=i64::try_from(epoch)?;
+        let row=self.connection()?.query_one(
+            "SELECT renew_character_authority($1,$2,$3,$4)",
+            &[&to_uuid(session),&to_uuid(character),&to_uuid(context),&expected],
+        )?;
+        let next:i64=row.get(0);
+        Ok(u64::try_from(next)?)
+    }
+
+    fn reclaim_expired_authority(
+        &self, session: Id, character: Id, context: Id, epoch: u64,
+    ) -> StoreResult<u64> {
+        let expected=i64::try_from(epoch)?;
+        let row=self.connection()?.query_one(
+            "SELECT reclaim_character_authority($1,$2,$3,$4)",
+            &[&to_uuid(session),&to_uuid(character),&to_uuid(context),&expected],
+        )?;
+        let next:i64=row.get(0);
+        Ok(u64::try_from(next)?)
     }
 
     fn latest_state(&self, entity_id: Id) -> StoreResult<Option<(u64,Snapshot)>> {
