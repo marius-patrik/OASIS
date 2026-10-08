@@ -301,4 +301,92 @@ BEGIN
   END;
 END $$;
 
+
+-- Checkpoint and travel are one atomic operation: native state is preserved
+-- without replacing the identity or engine module behind the character.
+DO $$
+DECLARE
+  result_epoch BIGINT;
+  persisted_rev BIGINT;
+  applied BOOLEAN;
+BEGIN
+  SELECT authority_epoch, snapshot_revision, was_applied
+    INTO result_epoch, persisted_rev, applied
+    FROM persist_character_travel(
+      '00000000-0000-0000-0000-000000000040','snapshot-travel-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',3,
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000042',
+      '00000000-0000-0000-0000-000000000001',0,
+      '{"native":{"module":"fixture","value":17},"revision":7}'::jsonb
+    );
+  IF result_epoch <> 4 OR persisted_rev <> 1 OR NOT applied THEN
+    RAISE EXCEPTION 'native checkpoint transfer failed';
+  END IF;
+
+  -- The same request can be retried after newer native state exists: its
+  -- original epoch and version are recovered from the committed checkpoint.
+  SELECT authority_epoch, snapshot_revision, was_applied
+    INTO result_epoch, persisted_rev, applied
+    FROM persist_character_travel(
+      '00000000-0000-0000-0000-000000000040','snapshot-travel-1',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000029',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-000000000023',
+      '00000000-0000-0000-0000-000000000024',
+      '00000000-0000-0000-0000-000000000025',3,
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000042',
+      '00000000-0000-0000-0000-000000000001',0,
+      '{"native":{"module":"fixture","value":17},"revision":7}'::jsonb
+    );
+  IF result_epoch <> 4 OR persisted_rev <> 1 OR applied THEN
+    RAISE EXCEPTION 'checkpoint retry was not idempotent';
+  END IF;
+
+  BEGIN
+    -- An incorrect version must reject the WHOLE transfer, including new
+    -- presence and authority. A savepoint is implicit in this PL/pgSQL block.
+    PERFORM * FROM persist_character_travel(
+      '00000000-0000-0000-0000-000000000043','snapshot-travel-stale',
+      '00000000-0000-0000-0000-000000000021',
+      '00000000-0000-0000-0000-000000000007',
+      '00000000-0000-0000-0000-000000000041',
+      '00000000-0000-0000-0000-000000000044',
+      '00000000-0000-0000-0000-000000000013',
+      '00000000-0000-0000-0000-000000000014',
+      '00000000-0000-0000-0000-000000000020',4,
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000045',
+      '00000000-0000-0000-0000-000000000001',0,
+      '{"native":{"value":999}}'::jsonb
+    );
+    RAISE EXCEPTION 'incorrect version must fail';
+  EXCEPTION WHEN serialization_failure THEN NULL;
+  END;
+  IF (SELECT count(*) FROM presences p WHERE p.entity_id =
+      '00000000-0000-0000-0000-000000000007' AND p.active) <> 1 THEN
+    RAISE EXCEPTION 'stale checkpoint left duplicate presence';
+  END IF;
+  IF (SELECT epoch FROM authority_leases WHERE resource_key =
+      'character:00000000-0000-0000-0000-000000000007') <> 4 THEN
+    RAISE EXCEPTION 'stale checkpoint modified authority';
+  END IF;
+  IF (SELECT doc.data #>> '{native,value}' FROM state_documents doc
+      WHERE doc.id='00000000-0000-0000-0000-000000000042') <> '17' THEN
+    RAISE EXCEPTION 'native game state lost';
+  END IF;
+  IF (SELECT count(*) FROM travel_checkpoints) <> 1 THEN
+    RAISE EXCEPTION 'travel checkpoint duplicated';
+  END IF;
+END $$;
+
 ROLLBACK;
