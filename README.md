@@ -15,6 +15,9 @@ authoritative interaction contracts through which they can coexist.
 - [Engine-independent Rust contracts](contracts/src/lib.rs).
 - [Native-module host](runtime/src/lib.rs) with spatial query dispatch, native
   state snapshots, authority fencing, and typed interaction routing.
+- [Pinned upstream native game sources](engines/README.md) for DOOM and Cave Story,
+  both compiled independently in the [native-source CI](.github/workflows/native-engines.yml).
+  These sources are **not yet OASIS adapters**.
 - [Adapter catalog](runtime/src/catalog.rs) for transactional, collision-free
   native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
@@ -44,8 +47,12 @@ psql -v ON_ERROR_STOP=1 -f tests/schema_smoke.sql
 ```
 
 **Status:** This is a working foundation, **not yet a complete MMO**.
-The real DOOM and Cave Story adapters, production networking, physical graphics composition and game adapters
-remain unimplemented. Cross-game interactions are final black-box verification
-criteria, never hard-coded game-pair features.
+The **actual DOOM and Cave Story adapters**, the durable SQL-to-Rust
+coordinator binding, production networking/authentication, scalable
+interest-managed replication, and GPU compositing remain unimplemented.
+The TCP development gateway uses explicitly injected authentication and
+returns snapshot identifiers/revisions, not complete game-ready state.
+Cross-game interactions are final black-box verification criteria,
+never hard-coded game-pair features.
 
 No game assets or proprietary source code are distributed in this repository.
