@@ -30,7 +30,7 @@ pub fn encode_value(value: &Value) -> StoreResult<Json> {
     })
 }
 
-fn payload<'a>(json: &'a Json) -> StoreResult<&'a Json> {
+fn payload(json: &Json) -> StoreResult<&Json> {
     json.get("v").ok_or_else(|| invalid("native value missing payload"))
 }
 pub fn decode_value(json: &Json) -> StoreResult<Value> {
