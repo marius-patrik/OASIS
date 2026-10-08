@@ -4,7 +4,7 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 ## Gate 0: Contract and candidate feasibility (parallel)
 
-- [ ] Pin exact SHAs and inspect source/license/asset packaging for the DOOM `room` and Cave Story `doukutsu-rs` candidates.
+- [x] Pin exact SHAs and inspect source entry points for the DOOM `room` and Cave Story `doukutsu-rs` candidates; license/asset packaging review is still required.
 - [ ] For each, identify headless game tick, state ownership, per-character controller, physics/geometry queries, camera and render entry points.
 - [ ] Verify whether two independent instances can coexist safely (process-isolation acceptable) and whether state can be restored from snapshots.
 - [ ] Audit copyleft obligations and distribution of executable code vs. game assets.
@@ -14,22 +14,22 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 ## Gate 1: Data substrate
 
-- [ ] Apply `0001_core.sql`, `0002_indexes.sql` to an actual PostgreSQL 15+ instance.
+- [x] Apply core, indexes, custody and travel migrations to PostgreSQL 16 through CI.
 - [ ] Build registry validation (namespace/version/payload schema) and a guarded data-service API; game modules cannot directly write tables.
 - [ ] Build identity, players, characters, items, definitions, component/state, relationships, worlds, and native module registration.
-- [ ] Implement transactional custody/ownership moves, journal/idempotency, optimistic revision checks, and monotonic lease fencing.
+- [x] Implement SQL transactional custody/ownership moves, journal/idempotency, optimistic revision checks, and monotonic lease fencing; Rust-to-SQL integration is still open.
 - [ ] Exercise concurrency/race/crash tests using *synthetic* data only.
 
 **Exit:** SQL and application-level invariant tests green; a user, character, world, original item definition, and arbitrary game-specific typed components persist and round-trip.
 
 ## Gate 2: Universal runtime and synthetic adapters
 
-- [ ] Turn `contracts` into a compiled, versioned Rust crate; define an ABI/IDL for out-of-process transports.
-- [ ] Build `WorldPort` dispatcher, native execution contexts, native handle registry, module clocks, snapshots/restore.
+- [ ] `contracts` compiles in CI; the stable out-of-process ABI/IDL remains open.
+- [x] Build in-process `WorldPort` dispatcher, native execution contexts, native handle registry, module clocks, and snapshots/restore.
 - [ ] Build geometry/spatial query and typed interaction routing/authority verification.
-- [ ] Implement generic camera owner selection, frame composition interface, and render contribution registration.
+- [x] Implement camera owner selection, frame composition plans and render contribution registration; GPU composition remains open.
 - [ ] Build two artificial fixture modules in isolated crates; different axes, 2D/3D and native frequencies.
-- [ ] Implement server authoritative networking, sessions, interest filtering, world lifecycle, and restart recovery.
+- [ ] Implemented an in-process multi-world coordinator, session fencing, fixed-rate native-module ticking and loopback TCP test gateway; production networking, persistence bindings, interest filtering and restart recovery remain open.
 - [ ] Run the conformance kit against both fixtures independently and together; disallow fixture-pair conditionals.
 
 **Exit:** runtime demonstrates generic composition and multiplayer without either source game.
@@ -71,6 +71,14 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 - [ ] Confirm zero compatibility code was written for either game pair.
 
 **On failure:** return to generic runtime contract / individual adapter defect, add a synthetic reproducer, rerun all adapter conformance tests, then restart final verification. Never make a partner-specific exception.
+
+## Verified implementation baseline (2026-10-08)
+
+- Universal Rust workspace, adapter catalog, native-module runtime, authority fencing, clock scheduling, render composition planning, and synthetic conformance tests compile and pass GitHub Actions.
+- PostgreSQL schema, custody transfer and authoritative presence-travel migrations execute and pass transactional smoke tests in CI. The Rust world coordinator is **not yet backed by this persistent store**.
+- The DOOM and Cave Story Rust sources are pinned as Git submodules and compile independently in native source CI. Their OASIS adapters do not yet exist.
+- The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
+- Final black-box interoperability has **not** been attempted; cross-game code must remain absent.
 
 ## Workstream separation
 
