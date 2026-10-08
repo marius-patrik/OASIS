@@ -637,6 +637,84 @@ mod tests {
     }
 
     #[test]
+    fn guarded_scheduler_stops_world_when_any_native_lease_is_revoked() {
+        use crate::scheduler::{TickAuthorizer,WorldRunner};
+        use std::sync::{Arc,Mutex,atomic::{AtomicBool,AtomicUsize,Ordering}};
+        use std::time::Instant;
+
+        struct Guard {
+            authorized: AtomicBool,
+            queries: AtomicUsize,
+        }
+        impl TickAuthorizer for Guard {
+            fn authorize(&self,world:Id,claim:SimulationLease)->ContractResult<()> {
+                assert_eq!(world,Id(20));
+                assert_eq!(claim.entity_id,Id(503));
+                assert_eq!(claim.context_id,Id(201));
+                assert_eq!(claim.epoch,4);
+                self.queries.fetch_add(1,Ordering::SeqCst);
+                if self.authorized.load(Ordering::SeqCst) {
+                    Ok(())
+                } else {
+                    Err(ContractError::StaleAuthority)
+                }
+            }
+        }
+        let (mut universe,_auth)=setup();
+        universe.recover_entity(entity(503,1),None,Some(PersistedPlacement{
+            world_instance_id:Id(20),authority_context_id:Id(201),
+            authority_epoch:4,
+        })).unwrap();
+        assert_eq!(universe.simulation_leases(Id(20)).unwrap(),vec![
+            SimulationLease{entity_id:Id(503),context_id:Id(201),epoch:4},
+        ]);
+        let shared=Arc::new(Mutex::new(universe));
+        let guard=Arc::new(Guard{
+            authorized:AtomicBool::new(true),queries:AtomicUsize::new(0),
+        });
+        let runner=WorldRunner::start(
+            Arc::clone(&shared),Id(20),Duration::from_millis(3),
+            guard.clone(),
+        ).unwrap();
+        let deadline=Instant::now()+Duration::from_secs(3);
+        while guard.queries.load(Ordering::SeqCst)<2 && Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(guard.queries.load(Ordering::SeqCst)>=2);
+        assert!(runner.last_error().is_none());
+        guard.authorized.store(false,Ordering::SeqCst);
+        let deadline=Instant::now()+Duration::from_secs(3);
+        while runner.last_error().is_none() && Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(runner.last_error(),Some(ContractError::StaleAuthority)));
+    }
+
+    #[test]
+    fn guarded_scheduler_rejects_missing_native_authority() {
+        use crate::scheduler::{TickAuthorizer,WorldRunner};
+        use std::sync::{Arc,Mutex};
+        struct Allow;
+        impl TickAuthorizer for Allow {
+            fn authorize(&self,_world:Id,_claim:SimulationLease)->ContractResult<()> {
+                Ok(())
+            }
+        }
+        let (mut universe,auth)=setup();
+        let ticket=universe.connect(&auth,"first").unwrap();
+        universe.enter_world(ticket,Id(10)).unwrap();
+        let runner=WorldRunner::start(
+            Arc::new(Mutex::new(universe)),Id(10),
+            Duration::from_millis(2),Arc::new(Allow),
+        ).unwrap();
+        let deadline=std::time::Instant::now()+Duration::from_secs(3);
+        while runner.last_error().is_none() && std::time::Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(runner.last_error(),Some(ContractError::StaleAuthority)));
+    }
+
+    #[test]
     fn recovery_rejects_foreign_snapshots_and_allows_unplaced_characters() {
         let (mut universe,_auth)=setup();
         let other=Snapshot{
