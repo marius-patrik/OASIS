@@ -9,9 +9,11 @@
 use std::error::Error;
 use std::fmt;
 use std::time::SystemTime;
+use std::sync::Arc;
 
-use oasis_contracts::{ContractError, Id};
-use oasis_runtime::universe::{PersistedPlacement, Universe};
+use oasis_contracts::{ContractError, ContractResult, Id};
+use oasis_runtime::universe::{PersistedPlacement, SimulationLease, Universe};
+use oasis_runtime::scheduler::TickAuthorizer;
 use oasis_store::{DurableWorldStore, StoreError};
 
 #[derive(Debug)]
@@ -58,6 +60,33 @@ pub struct RestoredCharacter {
     pub native_revision: Option<u64>,
 }
 
+/// Production tick gate: verify the active lease before any native module
+/// advances or processes controller input. Database failures fail CLOSED.
+pub struct PostgresTickAuthorizer {
+    store: Arc<dyn DurableWorldStore>,
+}
+
+impl PostgresTickAuthorizer {
+    pub fn new(store: Arc<dyn DurableWorldStore>) -> Self { Self { store } }
+}
+
+impl TickAuthorizer for PostgresTickAuthorizer {
+    fn authorize(&self, world: Id, claim: SimulationLease) -> ContractResult<()> {
+        let active = self.store.active_presence(claim.entity_id)
+            .map_err(|error| ContractError::Internal(
+                format!("durable authority check failed: {error}")
+            ))?
+            .ok_or(ContractError::StaleAuthority)?;
+        if active.world_instance_id != world
+            || active.authority_context_id != claim.context_id
+            || active.authority_epoch != claim.epoch
+        {
+            return Err(ContractError::StaleAuthority);
+        }
+        Ok(())
+    }
+}
+
 pub struct RecoveryService<'a> {
     store: &'a dyn DurableWorldStore,
 }
@@ -89,6 +118,7 @@ impl<'a> RecoveryService<'a> {
             Some(PersistedPlacement {
                 world_instance_id:presence.world_instance_id,
                 authority_context_id:presence.authority_context_id,
+                authority_epoch:presence.authority_epoch,
             })
         )?;
         Ok(RestoredCharacter {

@@ -1,13 +1,16 @@
 //! Runs on the real, disposable PostgreSQL CI fixture after the storage
 //! travel tests, validating native-world recovery of the committed snapshot.
 use std::collections::BTreeMap;
+use std::sync::{Arc,Mutex};
+use std::time::{Duration,Instant};
 
 use oasis_contracts::{
     ClockStep, ContractError, ContractResult, EntityView, Id, InputIntent,
     ModuleDescriptor, NativeHandle, NativeModule, Snapshot, StepOutput, WorldPort,
 };
 use oasis_runtime::universe::{Principal, SessionAuthority, Universe};
-use oasis_service::{RecoveryError, RecoveryService};
+use oasis_runtime::scheduler::WorldRunner;
+use oasis_service::{PostgresTickAuthorizer,RecoveryError, RecoveryService};
 use oasis_store::{DurableWorldStore, PostgresStore};
 
 struct NativeFixture {
@@ -159,4 +162,28 @@ fn committed_native_state_is_restored_to_original_engine_module() {
     ).unwrap();
     let recovered_snapshots=replacement.observe(recovered_ticket).unwrap();
     assert_eq!(recovered_snapshots[0].state,persisted.state);
+
+    // The next server can simulate only as long as its PostgreSQL lease is
+    // current. Revocation between ticks stops further native calls.
+    let gate=Arc::new(PostgresTickAuthorizer::new(
+        Arc::new(PostgresStore::connect(&url).unwrap()),
+    ));
+    let guarded=Arc::new(Mutex::new(replacement));
+    let runner=WorldRunner::start(
+        Arc::clone(&guarded),presence.world_instance_id,
+        Duration::from_millis(5),gate,
+    ).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(runner.last_error().is_none());
+    administrator.batch_execute(
+        "UPDATE authority_leases SET expires_at=now()-INTERVAL '1 second'
+          WHERE resource_key='character:00000000-0000-0000-0000-000000000007';"
+    ).unwrap();
+    let deadline=Instant::now()+Duration::from_secs(3);
+    while runner.last_error().is_none() && Instant::now()<deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(matches!(
+        runner.last_error(),Some(ContractError::StaleAuthority),
+    ));
 }

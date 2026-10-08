@@ -22,8 +22,11 @@ authoritative interaction contracts through which they can coexist.
   native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
   identity, independent native modules, world presence, movement and replication.
-- [World tick scheduler](runtime/src/scheduler.rs) for independent native
-  simulation clocks without client-driven ticks.
+- [Lease-gated world scheduler](runtime/src/scheduler.rs) for independent
+  native simulation clocks without client-driven ticks; every persistent
+  character must have its original-module context and current PostgreSQL
+  authority epoch validated before simulation. Storage failure or an expired
+  lease halts that shard instead of running unauthorized game logic.
 - [Loopback development gateway](runtime/src/gateway.rs) with real TCP clients.
   This is deliberately not a public network interface and has no production
   authentication, transport security or bandwidth-aware state replication.
@@ -71,9 +74,10 @@ interest-managed replication, and GPU compositing remain unimplemented.
 The PostgreSQL store and recovery service provide real persistent reads,
 transactional writes, and cold-start native-state recovery.
 However, **live travel is not yet orchestrated atomically with native module
-lifecycle**. Expired leases can be reclaimed in PostgreSQL, but currently
-running world shards do not yet enforce SQL lease expiration on every
-simulation tick, so SQL fencing alone is not complete distributed safety. The TCP gateway uses injected authentication and returns snapshot
+lifecycle**. The production scheduler now validates stored leases on every
+tick; however, a lease may change while native logic is already executing,
+so a distributed write-commit fence and bounded simulation cancellation are
+still required for complete multi-server safety. The TCP gateway uses injected authentication and returns snapshot
 identifiers/revisions, not complete game-ready replicated state.
 Cross-game interactions are final black-box verification criteria,
 never hard-coded game-pair features.

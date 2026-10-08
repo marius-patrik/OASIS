@@ -47,6 +47,16 @@ pub struct SessionTicket {
 pub struct PersistedPlacement {
     pub world_instance_id: Id,
     pub authority_context_id: Id,
+    /// Monotonic fencing epoch from the same committed database lease.
+    pub authority_epoch: u64,
+}
+
+/// A claim attached to native game state before the scheduler can advance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SimulationLease {
+    pub entity_id: Id,
+    pub context_id: Id,
+    pub epoch: u64,
 }
 
 struct WorldShard {
@@ -69,6 +79,7 @@ pub struct Universe {
     worlds: BTreeMap<Id, WorldShard>,
     entities: BTreeMap<Id, EntityView>,
     presence: BTreeMap<Id, Id>,
+    authority_epochs: BTreeMap<Id, u64>,
     connections: BTreeMap<u64, Principal>,
     active_connection: BTreeMap<Id, u64>,
     next_connection: u64,
@@ -129,6 +140,9 @@ impl Universe {
             return Err(invalid("snapshot does not belong to entity"));
         }
         if let Some(placement) = placement {
+            if placement.authority_epoch == 0 {
+                return Err(ContractError::StaleAuthority);
+            }
             let shard = self.worlds.get_mut(&placement.world_instance_id)
                 .ok_or(ContractError::NotFound(placement.world_instance_id))?;
             let context = *shard.contexts.get(&origin)
@@ -140,6 +154,7 @@ impl Universe {
             // presence becomes visible to network clients.
             shard.host.instantiate(context,entity.clone(),snapshot)?;
             self.presence.insert(entity.id,placement.world_instance_id);
+            self.authority_epochs.insert(entity.id,placement.authority_epoch);
         }
         self.entities.insert(entity.id,entity);
         Ok(())
@@ -256,7 +271,7 @@ impl Universe {
 
     /// Independently scheduled by the authoritative world loop. Native
     /// modules receive only input for entities whose source module they own.
-    pub fn step_world(&mut self, world: Id, delta_nanos: u64)
+    pub(crate) fn step_world(&mut self, world: Id, delta_nanos: u64)
         -> ContractResult<Vec<StepOutput>> {
         if delta_nanos == 0 { return Err(invalid("simulation delta must be positive")); }
         let shard = self.worlds.get_mut(&world).ok_or(ContractError::NotFound(world))?;
@@ -295,6 +310,22 @@ impl Universe {
             .collect();
         let shard = self.worlds.get_mut(&world).ok_or(ContractError::NotFound(world))?;
         ids.into_iter().map(|id| shard.host.snapshot(id)).collect()
+    }
+
+    /// Native state cannot be advanced by an authority-enforcing scheduler
+    /// unless *every* participating entity has its own valid fencing epoch.
+    /// Validate all claims before invoking any native module's world step.
+    pub fn simulation_leases(&self, world: Id) -> ContractResult<Vec<SimulationLease>> {
+        let shard = self.worlds.get(&world).ok_or(ContractError::NotFound(world))?;
+        self.presence.iter().filter(|(_,w)|**w==world).map(|(entity,_)| {
+            let origin = self.entities.get(entity).and_then(|e|e.origin_module)
+                .ok_or(ContractError::NotFound(*entity))?;
+            let context_id = *shard.contexts.get(&origin)
+                .ok_or(ContractError::StaleAuthority)?;
+            let epoch = *self.authority_epochs.get(entity)
+                .ok_or(ContractError::StaleAuthority)?;
+            Ok(SimulationLease{entity_id:*entity,context_id,epoch})
+        }).collect()
     }
 
     pub fn has_entity(&self, id: Id) -> bool { self.entities.contains_key(&id) }
@@ -547,7 +578,7 @@ mod tests {
         universe.enter_world(ticket,Id(10)).unwrap();
         universe.input(ticket,text_intent("move")).unwrap();
         let shared=Arc::new(Mutex::new(universe));
-        let runner=WorldRunner::start(
+        let runner=WorldRunner::start_unchecked_for_test(
             Arc::clone(&shared),Id(10),Duration::from_millis(3),
         ).unwrap();
         let deadline=Instant::now()+Duration::from_secs(3);
@@ -577,7 +608,7 @@ mod tests {
             }],
         };
         let forged=PersistedPlacement{
-            world_instance_id:Id(20),authority_context_id:Id(202),
+            world_instance_id:Id(20),authority_context_id:Id(202),authority_epoch:1,
         };
         assert!(matches!(
             universe.recover_entity(recovered.clone(),Some(&saved),Some(forged)),
@@ -588,6 +619,7 @@ mod tests {
 
         universe.recover_entity(recovered.clone(),Some(&saved),Some(PersistedPlacement{
             world_instance_id:Id(20),authority_context_id:Id(201),
+            authority_epoch:1,
         })).unwrap();
         let expiry=SystemTime::now()+Duration::from_secs(3600);
         auth.0.insert("restored".into(),Principal{
@@ -602,6 +634,84 @@ mod tests {
         assert_eq!(actual[0].binary_artifact,Some(Id(800)));
         assert_eq!(universe.presence(Id(503)),Some(Id(20)));
         assert!(universe.recover_entity(recovered,Some(&saved),None).is_err());
+    }
+
+    #[test]
+    fn guarded_scheduler_stops_world_when_any_native_lease_is_revoked() {
+        use crate::scheduler::{TickAuthorizer,WorldRunner};
+        use std::sync::{Arc,Mutex,atomic::{AtomicBool,AtomicUsize,Ordering}};
+        use std::time::Instant;
+
+        struct Guard {
+            authorized: AtomicBool,
+            queries: AtomicUsize,
+        }
+        impl TickAuthorizer for Guard {
+            fn authorize(&self,world:Id,claim:SimulationLease)->ContractResult<()> {
+                assert_eq!(world,Id(20));
+                assert_eq!(claim.entity_id,Id(503));
+                assert_eq!(claim.context_id,Id(201));
+                assert_eq!(claim.epoch,4);
+                self.queries.fetch_add(1,Ordering::SeqCst);
+                if self.authorized.load(Ordering::SeqCst) {
+                    Ok(())
+                } else {
+                    Err(ContractError::StaleAuthority)
+                }
+            }
+        }
+        let (mut universe,_auth)=setup();
+        universe.recover_entity(entity(503,1),None,Some(PersistedPlacement{
+            world_instance_id:Id(20),authority_context_id:Id(201),
+            authority_epoch:4,
+        })).unwrap();
+        assert_eq!(universe.simulation_leases(Id(20)).unwrap(),vec![
+            SimulationLease{entity_id:Id(503),context_id:Id(201),epoch:4},
+        ]);
+        let shared=Arc::new(Mutex::new(universe));
+        let guard=Arc::new(Guard{
+            authorized:AtomicBool::new(true),queries:AtomicUsize::new(0),
+        });
+        let runner=WorldRunner::start(
+            Arc::clone(&shared),Id(20),Duration::from_millis(3),
+            guard.clone(),
+        ).unwrap();
+        let deadline=Instant::now()+Duration::from_secs(3);
+        while guard.queries.load(Ordering::SeqCst)<2 && Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(guard.queries.load(Ordering::SeqCst)>=2);
+        assert!(runner.last_error().is_none());
+        guard.authorized.store(false,Ordering::SeqCst);
+        let deadline=Instant::now()+Duration::from_secs(3);
+        while runner.last_error().is_none() && Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(runner.last_error(),Some(ContractError::StaleAuthority)));
+    }
+
+    #[test]
+    fn guarded_scheduler_rejects_missing_native_authority() {
+        use crate::scheduler::{TickAuthorizer,WorldRunner};
+        use std::sync::{Arc,Mutex};
+        struct Allow;
+        impl TickAuthorizer for Allow {
+            fn authorize(&self,_world:Id,_claim:SimulationLease)->ContractResult<()> {
+                Ok(())
+            }
+        }
+        let (mut universe,auth)=setup();
+        let ticket=universe.connect(&auth,"first").unwrap();
+        universe.enter_world(ticket,Id(10)).unwrap();
+        let runner=WorldRunner::start(
+            Arc::new(Mutex::new(universe)),Id(10),
+            Duration::from_millis(2),Arc::new(Allow),
+        ).unwrap();
+        let deadline=std::time::Instant::now()+Duration::from_secs(3);
+        while runner.last_error().is_none() && std::time::Instant::now()<deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(matches!(runner.last_error(),Some(ContractError::StaleAuthority)));
     }
 
     #[test]
