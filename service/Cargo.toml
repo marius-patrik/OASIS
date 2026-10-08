@@ -1,0 +1,11 @@
+[package]
+name = "oasis-service"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Trusted PostgreSQL-to-native-runtime recovery coordinator"
+
+[dependencies]
+oasis-contracts = { path = "../contracts" }
+oasis-runtime = { path = "../runtime" }
+oasis-store = { path = "../store" }
