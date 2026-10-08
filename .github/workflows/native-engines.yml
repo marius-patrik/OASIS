@@ -5,11 +5,13 @@ on:
     branches: [main, "feat/**"]
     paths:
       - .gitmodules
+      - Cargo.toml
       - engines/**
       - .github/workflows/native-engines.yml
   pull_request:
     paths:
       - .gitmodules
+      - Cargo.toml
       - engines/**
       - .github/workflows/native-engines.yml
   workflow_dispatch:
