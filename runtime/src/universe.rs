@@ -428,4 +428,60 @@ mod tests {
         assert_eq!(server.presence(Id(502)),Some(Id(20)));
         assert_eq!(server.observe(b).unwrap().len(),1);
     }
+    #[test]
+    fn two_network_clients_share_world_without_identity_spoofing() {
+        use crate::gateway::LoopbackGateway;
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpStream;
+        use std::sync::{Arc, Mutex};
+
+        fn send(socket: &mut TcpStream, reader: &mut BufReader<TcpStream>,
+                command: &str) -> String {
+            writeln!(socket,"{command}").unwrap();
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            line.trim().to_owned()
+        }
+
+        let (universe,auth)=setup();
+        let shared=Arc::new(Mutex::new(universe));
+        let gateway=LoopbackGateway::bind(Arc::clone(&shared),Arc::new(auth)).unwrap();
+        let mut a=TcpStream::connect(gateway.local_addr()).unwrap();
+        let mut b=TcpStream::connect(gateway.local_addr()).unwrap();
+        a.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        b.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut ar=BufReader::new(a.try_clone().unwrap());
+        let mut br=BufReader::new(b.try_clone().unwrap());
+
+        assert_eq!(send(&mut a,&mut ar,"INPUT unauthorized"),"ERR auth-required");
+        assert_eq!(send(&mut a,&mut ar,"AUTH first"),"OK auth");
+        assert_eq!(send(&mut b,&mut br,"AUTH second"),"OK auth");
+        assert_eq!(send(&mut a,&mut ar,"JOIN 20"),"OK joined");
+        assert_eq!(send(&mut b,&mut br,"JOIN 20"),"OK joined");
+        assert_eq!(send(&mut a,&mut ar,"INPUT walk"),"OK queued");
+        shared.lock().unwrap().step_world(Id(20),16_666_667).unwrap();
+
+        assert_eq!(send(&mut b,&mut br,"POLL"),"COUNT 2");
+        let mut item1=String::new();
+        let mut item2=String::new();
+        let mut end=String::new();
+        br.read_line(&mut item1).unwrap();
+        br.read_line(&mut item2).unwrap();
+        br.read_line(&mut end).unwrap();
+        assert!(item1.contains("501 1"));
+        assert!(item2.contains("502 0"));
+        assert_eq!(end.trim(),"END");
+
+        // A newer login fences the earlier socket's controller session.
+        let mut c=TcpStream::connect(gateway.local_addr()).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let mut cr=BufReader::new(c.try_clone().unwrap());
+        assert_eq!(send(&mut c,&mut cr,"AUTH first"),"OK auth");
+        assert_eq!(send(&mut a,&mut ar,"INPUT spoof"),"ERR input-rejected");
+        assert_eq!(send(&mut c,&mut cr,"JOIN 20"),"OK joined");
+        assert_eq!(send(&mut c,&mut cr,"INPUT genuine"),"OK queued");
+        assert_eq!(send(&mut c,&mut cr,"QUIT"),"OK bye");
+        assert_eq!(shared.lock().unwrap().presence(Id(501)),Some(Id(20)));
+    }
+
 }
