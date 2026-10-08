@@ -47,6 +47,16 @@ pub struct SessionTicket {
 pub struct PersistedPlacement {
     pub world_instance_id: Id,
     pub authority_context_id: Id,
+    /// Monotonic fencing epoch from the same committed database lease.
+    pub authority_epoch: u64,
+}
+
+/// A claim attached to native game state before the scheduler can advance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SimulationLease {
+    pub entity_id: Id,
+    pub context_id: Id,
+    pub epoch: u64,
 }
 
 struct WorldShard {
@@ -69,6 +79,7 @@ pub struct Universe {
     worlds: BTreeMap<Id, WorldShard>,
     entities: BTreeMap<Id, EntityView>,
     presence: BTreeMap<Id, Id>,
+    authority_epochs: BTreeMap<Id, u64>,
     connections: BTreeMap<u64, Principal>,
     active_connection: BTreeMap<Id, u64>,
     next_connection: u64,
@@ -129,6 +140,9 @@ impl Universe {
             return Err(invalid("snapshot does not belong to entity"));
         }
         if let Some(placement) = placement {
+            if placement.authority_epoch == 0 {
+                return Err(ContractError::StaleAuthority);
+            }
             let shard = self.worlds.get_mut(&placement.world_instance_id)
                 .ok_or(ContractError::NotFound(placement.world_instance_id))?;
             let context = *shard.contexts.get(&origin)
@@ -140,6 +154,7 @@ impl Universe {
             // presence becomes visible to network clients.
             shard.host.instantiate(context,entity.clone(),snapshot)?;
             self.presence.insert(entity.id,placement.world_instance_id);
+            self.authority_epochs.insert(entity.id,placement.authority_epoch);
         }
         self.entities.insert(entity.id,entity);
         Ok(())
@@ -295,6 +310,22 @@ impl Universe {
             .collect();
         let shard = self.worlds.get_mut(&world).ok_or(ContractError::NotFound(world))?;
         ids.into_iter().map(|id| shard.host.snapshot(id)).collect()
+    }
+
+    /// Native state cannot be advanced by an authority-enforcing scheduler
+    /// unless *every* participating entity has its own valid fencing epoch.
+    /// Validate all claims before invoking any native module's world step.
+    pub fn simulation_leases(&self, world: Id) -> ContractResult<Vec<SimulationLease>> {
+        let shard = self.worlds.get(&world).ok_or(ContractError::NotFound(world))?;
+        self.presence.iter().filter(|(_,w)|**w==world).map(|(entity,_)| {
+            let origin = self.entities.get(entity).and_then(|e|e.origin_module)
+                .ok_or(ContractError::NotFound(*entity))?;
+            let context_id = *shard.contexts.get(&origin)
+                .ok_or(ContractError::StaleAuthority)?;
+            let epoch = *self.authority_epochs.get(entity)
+                .ok_or(ContractError::StaleAuthority)?;
+            Ok(SimulationLease{entity_id:*entity,context_id,epoch})
+        }).collect()
     }
 
     pub fn has_entity(&self, id: Id) -> bool { self.entities.contains_key(&id) }
@@ -547,7 +578,7 @@ mod tests {
         universe.enter_world(ticket,Id(10)).unwrap();
         universe.input(ticket,text_intent("move")).unwrap();
         let shared=Arc::new(Mutex::new(universe));
-        let runner=WorldRunner::start(
+        let runner=WorldRunner::start_unchecked_for_test(
             Arc::clone(&shared),Id(10),Duration::from_millis(3),
         ).unwrap();
         let deadline=Instant::now()+Duration::from_secs(3);
@@ -577,7 +608,7 @@ mod tests {
             }],
         };
         let forged=PersistedPlacement{
-            world_instance_id:Id(20),authority_context_id:Id(202),
+            world_instance_id:Id(20),authority_context_id:Id(202),authority_epoch:1,
         };
         assert!(matches!(
             universe.recover_entity(recovered.clone(),Some(&saved),Some(forged)),
@@ -588,6 +619,7 @@ mod tests {
 
         universe.recover_entity(recovered.clone(),Some(&saved),Some(PersistedPlacement{
             world_instance_id:Id(20),authority_context_id:Id(201),
+            authority_epoch:1,
         })).unwrap();
         let expiry=SystemTime::now()+Duration::from_secs(3600);
         auth.0.insert("restored".into(),Principal{
