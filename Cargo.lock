@@ -283,6 +283,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oasis-service"
+version = "0.1.0"
+dependencies = [
+ "oasis-contracts",
+ "oasis-runtime",
+ "oasis-store",
+]
+
+[[package]]
 name = "oasis-store"
 version = "0.1.0"
 dependencies = [
