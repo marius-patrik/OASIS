@@ -154,9 +154,9 @@ fn committed_native_state_is_restored_to_original_engine_module() {
     assert_eq!(rebooted.durable_revision,Some(2));
     assert_eq!(store.active_presence(Id(0x7)).unwrap().unwrap()
         .authority_context_id,next_context);
-    assert_eq!(replacement.observe(
-        replacement.connect(
-            &VerifiedSession(&store),"test-authenticated-session",
-        ).unwrap()
-    ).unwrap()[0].state,persisted.state);
+    let recovered_ticket=replacement.connect(
+        &VerifiedSession(&store),"test-authenticated-session",
+    ).unwrap();
+    let recovered_snapshots=replacement.observe(recovered_ticket).unwrap();
+    assert_eq!(recovered_snapshots[0].state,persisted.state);
 }
