@@ -1,6 +1,6 @@
 # OASIS — Implementation Plan v0.1
 
-This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that any game has already been integrated.
+This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that either original game is complete. Partial original Cave Story hitbox and weapon operations now execute through independent OASIS adapters.
 
 ## Gate 0: Contract and candidate feasibility (parallel)
 
@@ -16,20 +16,24 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 - [x] Apply core, indexes, custody and travel migrations to PostgreSQL 16 through CI.
 - [ ] Build registry validation (namespace/version/payload schema) and a guarded data-service API; game modules cannot directly write tables.
-- [ ] Implemented read APIs for persisted identity/session, entity definition, components and native snapshots; complete guarded create/update data-service APIs remain open.
-- [x] Implement SQL transactional custody/ownership moves, journal/idempotency, optimistic revision checks, and monotonic lease fencing; Rust-to-SQL integration is still open.
-- [ ] PostgreSQL smoke tests and Rust integration tests now cover two-way world travel, native snapshots, replay and stale-revision rollback; real concurrent process-crash recovery and data-service authorization remain open.
+- [x] Implement read APIs for persisted identity/session, entity definitions, components, and native snapshots; guarded create/update data-service APIs remain open.
+- [x] Implement SQL transactional custody/ownership moves, journal/idempotency, optimistic revision checks, and monotonic lease fencing, with Rust/PostgreSQL integration tests.
+- [x] Test two-way world travel, native snapshots, replay, stale revisions, lease reclamation, and injected native destination failure against PostgreSQL.
+- [ ] Extend to concurrent multi-process crash/recovery and guarded data-service authorization.
 
 **Exit:** SQL and application-level invariant tests green; a user, character, world, original item definition, and arbitrary game-specific typed components persist and round-trip.
 
 ## Gate 2: Universal runtime and synthetic adapters
 
-- [ ] `contracts` compiles in CI; the stable out-of-process ABI/IDL remains open.
+- [x] Compile and test `contracts` in CI.
+- [ ] Stabilize an out-of-process native ABI/IDL for isolated engines.
 - [x] Build in-process `WorldPort` dispatcher, native execution contexts, native handle registry, module clocks, and snapshots/restore.
-- [ ] Build geometry/spatial query and typed interaction routing/authority verification.
+- [x] Provide a basic geometry/spatial-query and typed interaction/authority dispatcher.
+- [ ] Complete native-world geometry providers, backend-specific physics, and remote transaction fencing.
 - [x] Implement camera owner selection, frame composition plans and render contribution registration; GPU composition remains open.
 - [ ] Build two artificial fixture modules in isolated crates; different axes, 2D/3D and native frequencies.
-- [ ] Implemented an in-process multi-world coordinator, session fencing, fixed-rate native-module ticking and loopback TCP test gateway; production networking, persistence bindings, interest filtering and restart recovery remain open.
+- [x] Implement an in-process multi-world coordinator, session fencing, durable native checkpoints, lease-gated ticking, SQL-backed recovery/live travel, and a loopback TCP test gateway.
+- [ ] Implement production networking/authentication, interest management, remote hosting and distributed cancellation.
 - [ ] Run the conformance kit against both fixtures independently and together; disallow fixture-pair conditionals.
 
 **Exit:** runtime demonstrates generic composition and multiplayer without either source game.
@@ -45,6 +49,8 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 ## Gate 3B: Cave Story adapter — independent lane
 
+- [x] Run upstream `HitExtents` collision-membership methods through an independently registered OASIS native module, with snapshot/restore and source-game CI.
+- [x] Execute upstream `Weapon::consume_ammo` and `Weapon::refill_ammo` as a separate portable item module, with native ammunition semantics and state/metadata preservation.
 - [ ] Extract/host Cave Story simulation, controller, physics/geometry, item behaviors, camera/render pipeline through the **same** contract.
 - [ ] Keep its original 2D frame and native mechanics; do not change DOOM adapter or platform for its private types.
 - [ ] Register records, assets and native bindings through the universal API.
@@ -72,14 +78,14 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 **On failure:** return to generic runtime contract / individual adapter defect, add a synthetic reproducer, rerun all adapter conformance tests, then restart final verification. Never make a partner-specific exception.
 
-## Verified implementation baseline (2026-10-08)
+## Verified implementation baseline (2026-10-09)
 
 - Universal Rust workspace, adapter catalog, native-module runtime, authority fencing, clock scheduling, render composition planning, and synthetic conformance tests compile and pass GitHub Actions.
 - PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; cold-start state restoration is now available through `oasis-service`, and expired leases can be reclaimed by a restarted native context; in-process live travel is now SQL-coordinated, with native-context quarantine
   and restart recovery on failed destination instantiation. Persistent-lease
   gating is enforced at tick boundaries. Cross-process travel, cancellation
   of in-flight game logic, and durable-effect fencing remain open.
-- The DOOM and Cave Story Rust sources are pinned as Git submodules and compile independently in native source CI. Their OASIS adapters do not yet exist.
+- Both original Rust sources are pinned as independent Git submodules. Cave Story has independently tested native hitbox and weapon-ammunition OASIS modules; its full game, character controller, physics, projectile effects and renderer are not integrated. The DOOM OASIS adapter remains entirely unimplemented.
 - The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
 - Final black-box interoperability has **not** been attempted; cross-game code must remain absent.
 
