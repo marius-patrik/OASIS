@@ -30,6 +30,12 @@ authoritative interaction contracts through which they can coexist.
   player movement, complete collision response, projectiles, NPCs,
   camera/rendering, and DOOM's gameplay globals/thinker loop, native
   controller, renderer and WAD loading remain unintegrated.
+- [Source-native Cave Story player worker](adapters/cave-story/src/gameplay.rs)
+  now runs the original pinned player controller, movement and PXM-stage tile
+  collision in a non-`Send` isolated child, exposed through the SAME generic
+  OASIS GameAdapter, NativeModule and Host interfaces. Movement checkpoints
+  restart across OS processes; full original scene-state checkpointing,
+  NPC/projectile simulation and rendering are still unimplemented.
 - [Original game worker executables](adapters/) run the actual pinned
   Cave Story hitbox, weapon and stage functions, and DOOM source-native
   physics/geometry routines, in **separate OS processes** using the universal
