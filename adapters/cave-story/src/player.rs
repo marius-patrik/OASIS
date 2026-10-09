@@ -34,7 +34,7 @@ mod tests {
         sim.tick().expect("upstream original weapon and bullet tick");
         assert!(sim.active_bullets()>0,
             "original weapon logic should spawn an original-engine projectile");
-        assert_eq!(sim.current_weapon_ammo(),Some((2,1,0,2,3)),
+        assert_eq!(sim.current_weapon_state(),Some((2,1,0,2,3)),
             "the original game must consume its own source-native ammunition");
     }
 
