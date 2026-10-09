@@ -22,19 +22,19 @@ mod tests {
 
     #[test]
     fn original_weapon_and_bullet_system_fires_on_source_player_input() {
-        use doukutsu_rs::game::weapon::WeaponType;
+        use doukutsu_rs::game::weapon::{WeaponType,WeaponLevel};
         let mut sim=Simulation::new().expect("original headless engine");
         let (pxm,attrib)=flat_native_stage();
         sim.load_stage(&pxm,&attrib).expect("native original PXM reader");
         sim.player.x=6*8192;
         sim.player.y=2*8192;
-        sim.equip_weapon(WeaponType::PolarStar,3);
-        assert_eq!(sim.current_weapon_ammo(),Some((3,3)));
+        sim.equip_weapon(WeaponType::PolarStar,WeaponLevel::Level1,0,3,3);
+        assert_eq!(sim.current_weapon_state(),Some((2,1,0,3,3)));
         sim.controls(Buttons{shoot:true,..Buttons::default()});
         sim.tick().expect("upstream original weapon and bullet tick");
         assert!(sim.active_bullets()>0,
             "original weapon logic should spawn an original-engine projectile");
-        assert_eq!(sim.current_weapon_ammo(),Some((2,3)),
+        assert_eq!(sim.current_weapon_ammo(),Some((2,1,0,2,3)),
             "the original game must consume its own source-native ammunition");
     }
 
