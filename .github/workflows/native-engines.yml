@@ -72,3 +72,5 @@ jobs:
       - name: Verify source-backed DOOM native physics and geometry capability
         if: matrix.name == 'doom'
         run: cargo test --manifest-path adapters/doom/Cargo.toml --lib
+      - name: Execute source-native game modules inside isolated workers
+        run: cargo test --manifest-path adapters/${{ matrix.name }}/Cargo.toml --test process
