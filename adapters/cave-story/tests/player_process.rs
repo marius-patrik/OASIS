@@ -1,0 +1,168 @@
+//! Real child-process test: OASIS calls the original Cave Story player
+//! and tile collision implementation, not a synthetic movement fixture.
+//! The checkpoint used here intentionally covers the supported *movement*
+//! fields only. It does NOT prove a lossless full-game scene checkpoint.
+use std::collections::BTreeMap;
+
+use oasis_adapter_cave_story::gameplay::{kind,OriginalPlayerAdapter,MODULE_ID,DEFINITION_ID};
+use oasis_contracts::{
+    AdapterRegistry,ClockStep,ContractError,DefinitionRef,EntityView,GameAdapter,
+    Id,InputIntent,Revision,TypeRef,TypedValue,Value,
+};
+use oasis_runtime::{catalog::Catalog,Host};
+
+fn generated_stage()->(Vec<u8>,Vec<u8>){
+    const WIDTH:usize=12;
+    const HEIGHT:usize=12;
+    let mut tiles=vec![0u8;WIDTH*HEIGHT];
+    for x in 0..WIDTH{tiles[7*WIDTH+x]=1;}
+    let mut pxm=b"PXM".to_vec();
+    pxm.push(0x10);
+    pxm.extend_from_slice(&(WIDTH as u16).to_le_bytes());
+    pxm.extend_from_slice(&(HEIGHT as u16).to_le_bytes());
+    pxm.extend_from_slice(&tiles);
+    let mut attributes=vec![0;256];
+    attributes[1]=0x41;
+    (pxm,attributes)
+}
+fn player()->EntityView{
+    let (pxm,attributes)=generated_stage();
+    EntityView{
+        id:Id(u128::MAX-2),
+        definition:DefinitionRef{id:DEFINITION_ID,version:1},
+        revision:Revision(42),origin_module:Some(MODULE_ID),
+        components:vec![
+            TypedValue{type_ref:kind("player.stage-pxm"),data:Value::Map(BTreeMap::from([
+                ("pxm".into(),Value::Bytes(pxm)),
+                ("attributes".into(),Value::Bytes(attributes)),
+            ]))},
+            TypedValue{type_ref:kind("player.movement-state"),data:Value::Map(BTreeMap::from([
+                ("x".into(),Value::Int(6*8192)),
+                ("y".into(),Value::Int(2*8192)),
+                ("vel_x".into(),Value::Int(0)),
+                ("vel_y".into(),Value::Int(0)),
+                ("life".into(),Value::UInt(3)),
+                ("collision_flags".into(),Value::UInt(0)),
+                ("native_tick".into(),Value::UInt(0)),
+            ]))},
+            TypedValue{type_ref:TypeRef{namespace:"original.unknown".into(),
+                name:"opaque-native-bytecode".into(),version:9},
+                data:Value::Bytes(vec![0,254,255,42])},
+        ],
+    }
+}
+fn adapter()->OriginalPlayerAdapter{
+    OriginalPlayerAdapter{
+        worker_path:env!("CARGO_BIN_EXE_oasis-worker").into(),
+    }
+}
+fn tick(n:u64)->ClockStep{
+    ClockStep{native_tick:n,simulation_time_nanos:u128::from(n)*20_000_000,
+        delta_nanos:20_000_000}
+}
+fn controls(id:Id,right:bool)->InputIntent{
+    InputIntent{
+        controller_entity_id:id,
+        intent:TypedValue{type_ref:kind("player.controls"),
+            data:Value::Map(BTreeMap::from([
+                ("right".into(),Value::Bool(right)),
+            ]))},
+    }
+}
+fn movement(s:&oasis_contracts::Snapshot)->&BTreeMap<String,Value>{
+    let state=s.state.iter().find(|v|v.type_ref==kind("player.movement-state")).unwrap();
+    let Value::Map(m)=&state.data else{panic!("malformed native state")};
+    m
+}
+fn get_i32(m:&BTreeMap<String,Value>,key:&str)->i64{
+    match m.get(key){Some(Value::Int(n))=>*n,_=>panic!("not native signed int")}
+}
+
+#[test]
+fn actual_original_player_worker_uses_universal_catalog_and_host() {
+    let original=player();
+    let id=original.id;
+    let adapter=adapter();
+    let mut catalog=Catalog::new();
+    catalog.install(&adapter).unwrap();
+    assert_eq!(catalog.module(MODULE_ID).unwrap().engine_id,
+        oasis_adapter_cave_story::ENGINE_ID);
+    assert_eq!(catalog.capability_provider(&kind("player.controls")),Some(MODULE_ID));
+
+    let mut host=Host::new();
+    let context=Id(7001);
+    host.register_module(context,adapter.start_context(MODULE_ID,context).unwrap()).unwrap();
+    host.instantiate(context,original.clone(),None).unwrap();
+    let before=host.snapshot(id).unwrap();
+    assert_eq!(before.state,original.components);
+    for n in 1..=8 {
+        let output=host.step(context,tick(n),&[controls(id,true)]).unwrap();
+        assert_eq!(output.state_changes.len(),1);
+        assert_eq!(output.state_changes[0].revision,Revision(42+n));
+    }
+    let checkpoint=host.snapshot(id).unwrap();
+    assert!(get_i32(movement(&checkpoint),"x")>6*8192);
+    assert!(get_i32(movement(&checkpoint),"vel_x")>0);
+    assert_eq!(movement(&checkpoint).get("native_tick"),Some(&Value::UInt(8)));
+    assert_eq!(checkpoint.state[2],original.components[2]);
+
+    // Native player and its source-game stage are reconstructed in a NEW
+    // child OS process, carrying the original global entity ID unchanged.
+    host.remove(id).unwrap();
+    let mut recovery=Host::new();
+    let second_context=Id(7002);
+    recovery.register_module(second_context,
+        adapter.start_context(MODULE_ID,second_context).unwrap()).unwrap();
+    recovery.instantiate(second_context,original.clone(),Some(&checkpoint)).unwrap();
+    assert_eq!(recovery.snapshot(id).unwrap().state,checkpoint.state);
+    for n in 9..=16 {
+        let output=recovery.step(second_context,tick(n),&[controls(id,false)]).unwrap();
+        assert_eq!(output.emitted_events[0].type_ref,kind("player.frame"));
+    }
+    let recovered=recovery.snapshot(id).unwrap();
+    assert_eq!(recovered.entity_id,id);
+    assert_eq!(recovered.revision,Revision(58));
+    assert_eq!(recovered.state[2],original.components[2]);
+    assert_eq!(movement(&recovered).get("native_tick"),Some(&Value::UInt(16)));
+}
+#[test]
+fn invalid_native_controls_never_mutate_player_or_advance_tick(){
+    let original=player();
+    let adapter=adapter();
+    let mut host=Host::new();
+    let context=Id(7003);
+    host.register_module(context,adapter.start_context(MODULE_ID,context).unwrap()).unwrap();
+    host.instantiate(context,original.clone(),None).unwrap();
+    let before=host.snapshot(original.id).unwrap();
+    let foreign=InputIntent{
+        controller_entity_id:Id(1),intent:TypedValue{
+            type_ref:kind("player.controls"),
+            data:Value::Map(BTreeMap::from([("right".into(),Value::Bool(true))])),
+        },
+    };
+    assert!(host.step(context,tick(1),&[foreign]).is_err());
+    assert_eq!(host.snapshot(original.id).unwrap().state,before.state);
+
+    let bad=InputIntent{controller_entity_id:original.id,
+        intent:TypedValue{type_ref:kind("player.controls"),
+            data:Value::Map(BTreeMap::from([("right".into(),Value::UInt(1))]))},
+    };
+    assert!(host.step(context,tick(1),&[bad]).is_err());
+    assert_eq!(host.snapshot(original.id).unwrap().revision,Revision(42));
+    host.step(context,tick(1),&[controls(original.id,true)]).unwrap();
+    assert_eq!(host.snapshot(original.id).unwrap().revision,Revision(43));
+}
+#[test]
+fn native_player_checkpoint_rejects_foreign_identity_and_malformed_source_stage(){
+    let mut entity=player();
+    let adapter=adapter();
+    let mut host=Host::new();
+    let ctx=Id(7004);
+    host.register_module(ctx,adapter.start_context(MODULE_ID,ctx).unwrap()).unwrap();
+    let mut foreign=entity.clone();
+    foreign.origin_module=Some(Id(999));
+    assert!(host.instantiate(ctx,foreign,None).is_err());
+    let Value::Map(m)=&mut entity.components[0].data else{panic!()};
+    m.insert("pxm".into(),Value::Bytes(vec![1,2,3]));
+    assert!(host.instantiate(ctx,entity,None).is_err());
+}
