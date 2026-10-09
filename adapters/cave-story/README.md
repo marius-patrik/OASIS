@@ -105,3 +105,32 @@ Native scene NPCs, projectiles, cameras/renderers, original world script
 lifecycle and complete opaque player-state serialization remain open. The existing worker protocol can host this non-`Send`
 engine context once its lifecycle and complete native snapshot rules
 are integrated.
+
+## Original player simulation in a game worker (movement-only checkpoint)
+
+The [original player module](src/gameplay.rs) hosts the pinned
+`doukutsu_rs::oasis_bridge::Simulation` inside its own **non-Send** native
+game worker. The universal [process-boundary ABI](../../native-process/)
+exposes it as an ordinary `GameAdapter` / `NativeModule` to OASIS. It
+loads a source-native PXM stage, applies typed controller input, calls the
+actual upstream `Player::tick` and `PhysicalEntity::tick_map_collisions`,
+and emits persistent native movement state on each authoritative tick.
+
+The [process integration tests](tests/player_process.rs) verify this through
+the actual OASIS catalog and `Host`, including a real child process,
+movement and collision, exact persistence of unknown attached game metadata,
+restart into another source game process, and fail-closed invalid input.
+
+**Important limit:** the current `player.movement-state` checkpoint stores
+only the source player's fixed-point position, velocity, life, collision
+flags and native tick, plus the unmodified PXM stage attachment and arbitrary
+source components. It does **not** preserve the full original Player object,
+NPC state, animation/booster timers, source RNG, inventory, scripts or native
+render scene. Therefore it cannot yet be called full lossless native
+portability. Completing the source-owned full checkpoint remains mandatory.
+
+Run after applying the pinned upstream patch:
+
+```sh
+cargo test --manifest-path adapters/cave-story/Cargo.toml --test player_process
+```
