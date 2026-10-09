@@ -13,16 +13,22 @@ diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/oasis_bridge.rs
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,159 @@
 +//! OASIS source-native headless entrypoint, applied as an exact patch to the
 +//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
 +use std::cell::RefCell;
 +use std::rc::Rc;
++use std::io::Cursor;
 +
 +use crate::entity::GameEntity;
 +use crate::framework::context::Context;
 +use crate::framework::error::GameResult;
 +use crate::game::filesystem_container::FilesystemContainer;
++use crate::game::map::Map;
++use crate::game::physics::PhysicalEntity;
++use crate::game::stage::{Stage, StageData, Tileset, Background, BackgroundType, NpcType};
++use crate::common::Color;
++use crate::framework::error::GameError;
 +use crate::game::npc::list::NPCList;
 +use crate::game::player::Player;
 +use crate::game::shared_game_state::SharedGameState;
@@ -103,6 +109,7 @@ new file mode 100644
 +    _context:Context,
 +    _filesystem:FilesystemContainer,
 +    npc_list:NPCList,
++    stage:Option<Stage>,
 +    input:InputLatch,
 +}
 +impl Simulation {
@@ -118,7 +125,7 @@ new file mode 100644
 +        let input=InputLatch::default();
 +        player.controller=Box::new(input.clone());
 +        let (npc_list,_token)=NPCList::new();
-+        Ok(Self{player,state,_context:context,_filesystem:filesystem,npc_list,input})
++        Ok(Self{player,state,_context:context,_filesystem:filesystem,npc_list,stage:None,input})
 +    }
 +    pub fn controls(&mut self,buttons:Buttons){*self.input.current.borrow_mut()=buttons;}
 +    pub fn frame(&self)->PlayerFrame {
@@ -128,8 +135,40 @@ new file mode 100644
 +            life:self.player.life,collision_flags:self.player.flags.0,
 +        }
 +    }
++    /// Load an original Cave Story PXM tilemap and source-native attribute
++    /// table. The upstream map reader and collision solver stay authoritative.
++    pub fn load_stage(&mut self,pxm:&[u8],attributes:&[u8])->GameResult<()>{
++        if pxm.len()<8 || &pxm[0..3]!=b"PXM" || pxm[3]!=0x10
++            || attributes.len()!=256 {
++            return Err(GameError::ResourceLoadError("invalid original PXM map".into()));
++        }
++        let width=usize::from(u16::from_le_bytes([pxm[4],pxm[5]]));
++        let height=usize::from(u16::from_le_bytes([pxm[6],pxm[7]]));
++        let count=width.checked_mul(height).ok_or_else(||
++            GameError::ResourceLoadError("map dimensions overflow".into()))?;
++        if width==0 || height==0 || count>usize::from(u16::MAX)
++            || pxm.len()!=count+8 {
++            return Err(GameError::ResourceLoadError("invalid original map size".into()));
++        }
++        let map=Map::load_pxm(Cursor::new(pxm),Cursor::new(attributes))?;
++        self.state.tile_size=map.tile_size;
++        let data=StageData {
++            name:String::new(),name_jp:String::new(),map:String::new(),
++            boss_no:0,tileset:Tileset::new("0"),pxpack_data:None,
++            background:Background::new("bk0"),background_type:BackgroundType::Black,
++            background_color:Color::from_rgb(0,0,0),
++            npc1:NpcType::new("0"),npc2:NpcType::new("0"),
++        };
++        self.stage=Some(Stage{map,data});
++        Ok(())
++    }
 +    pub fn tick(&mut self)->GameResult<PlayerFrame>{
++        // Match the original GameScene::tick_world order: movement first,
++        // source-native tile physics next, never a platform-side solver.
 +        self.player.tick(&mut self.state,&self.npc_list)?;
++        if let Some(stage)=self.stage.as_mut(){
++            self.player.tick_map_collisions(&mut self.state,&self.npc_list,stage);
++        }
 +        self.player.controller.update_trigger();
 +        Ok(self.frame())
 +    }
