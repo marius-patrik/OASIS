@@ -8,6 +8,7 @@ on:
       - Cargo.toml
       - engines/**
       - adapters/cave-story/**
+      - adapters/doom/**
       - .github/workflows/native-engines.yml
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - Cargo.toml
       - engines/**
       - adapters/cave-story/**
+      - adapters/doom/**
       - .github/workflows/native-engines.yml
   workflow_dispatch:
 
@@ -67,3 +69,6 @@ jobs:
       - name: Verify source-backed Cave Story OASIS native capability
         if: matrix.name == 'cave-story'
         run: cargo test --manifest-path adapters/cave-story/Cargo.toml --lib
+      - name: Verify source-backed DOOM native physics and geometry capability
+        if: matrix.name == 'doom'
+        run: cargo test --manifest-path adapters/doom/Cargo.toml --lib
