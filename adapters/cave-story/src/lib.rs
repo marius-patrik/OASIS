@@ -376,4 +376,38 @@ mod tests {
         ]));
         assert!(native.instantiate(&player,None).is_err());
     }
+    #[test]
+    fn real_native_capability_executes_through_universal_oasis_host() {
+        use oasis_runtime::{Host, catalog::Catalog};
+
+        let adapter=CaveStoryAdapter;
+        let mut catalog=Catalog::new();
+        catalog.install(&adapter).unwrap();
+        assert!(catalog.module(MODULE_ID).is_some());
+        assert_eq!(catalog.capability_provider(&kind(HIT_TEST)),Some(MODULE_ID));
+
+        let mut first=Host::new();
+        let context=Id(501);
+        first.register_module(context,
+            adapter.start_context(MODULE_ID,context).unwrap()).unwrap();
+        let entity=entity();
+        first.instantiate(context,entity.clone(),None).unwrap();
+        let events=first.step(context,tick(1),&[query(1000,2000)])
+            .unwrap().emitted_events;
+        assert!(verdict(&events[0]));
+        let snapshot=first.snapshot(entity.id).unwrap();
+
+        // Another host simulates the same originating module independently.
+        // Transfer its original source-native state, not a translated proxy.
+        first.remove(entity.id).unwrap();
+        let mut second=Host::new();
+        second.register_module(Id(502),
+            adapter.start_context(MODULE_ID,Id(502)).unwrap()).unwrap();
+        second.instantiate(Id(502),entity.clone(),Some(&snapshot)).unwrap();
+        assert_eq!(second.snapshot(entity.id).unwrap().state,snapshot.state);
+        let events=second.step(Id(502),tick(1),&[query(980,2000)])
+            .unwrap().emitted_events;
+        assert!(!verdict(&events[0]));
+    }
+
 }
