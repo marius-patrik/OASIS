@@ -8,6 +8,9 @@ source functions:
   and original overflow behavior.
 - `p_maputl::P_AproxDistance` for the original map/thing distance estimator.
 - `m_bbox::M_ClearBox` and `M_AddToBox` for native bounding-box logic.
+  The upstream implementation retains a historical `if/else if` edge-update
+  behavior that can leave the box inverted after a short insertion sequence;
+  OASIS passes through its result rather than normalizing it.
 
 The origin module registers these capabilities through standard OASIS
 `GameAdapter` and executes them through `NativeModule`. Tests validate
