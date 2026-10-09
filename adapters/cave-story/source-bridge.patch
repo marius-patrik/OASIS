@@ -13,7 +13,7 @@ diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/oasis_bridge.rs
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,173 @@
 +//! OASIS source-native headless entrypoint, applied as an exact patch to the
 +//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
 +use std::cell::RefCell;
@@ -161,6 +161,19 @@ new file mode 100644
 +        };
 +        self.stage=Some(Stage{map,data});
 +        Ok(())
++    }
++    /// Apply the source-owned movement state supplied by the native adapter
++    /// to the original Player object, not a parallel platform physics model.
++    /// This currently preserves movement fields only, not all scene internals.
++    pub fn restore_frame(&mut self,frame:PlayerFrame){
++        self.player.x=frame.x;
++        self.player.y=frame.y;
++        self.player.vel_x=frame.vel_x;
++        self.player.vel_y=frame.vel_y;
++        self.player.prev_x=frame.x;
++        self.player.prev_y=frame.y;
++        self.player.life=frame.life;
++        self.player.flags.0=frame.collision_flags;
 +    }
 +    pub fn tick(&mut self)->GameResult<PlayerFrame>{
 +        // Match the original GameScene::tick_world order: movement first,
