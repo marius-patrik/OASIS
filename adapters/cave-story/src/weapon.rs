@@ -90,6 +90,7 @@ fn save_ammo(snapshot: &mut Snapshot, native: &Weapon) -> ContractResult<()> {
     Ok(())
 }
 
+#[derive(Clone)]
 struct NativeInstance {
     id: Id,
     weapon: Weapon,
@@ -175,6 +176,9 @@ impl NativeModule for CaveStoryWeaponModule {
         }
         // Each item runs its originating weapon logic, irrespective of the
         // current world. OASIS does not implement its consume/refill formulas.
+        // Stage the entire tick; malformed later inputs must not leave
+        // partially modified native ammunition in the originating engine.
+        let mut staged=self.instances.clone();
         let mut changed=BTreeMap::new();
         let mut events=Vec::new();
         for input in inputs {
@@ -189,7 +193,7 @@ impl NativeModule for CaveStoryWeaponModule {
                     .map_err(|_|invalid("native ammo amount exceeds u16"))?,
                 _ => return Err(invalid("native ammo amount must be unsigned")),
             };
-            let instance=self.instances.values_mut()
+            let instance=staged.values_mut()
                 .find(|instance|instance.id==input.controller_entity_id)
                 .ok_or(ContractError::NotFound(input.controller_entity_id))?;
             let before=instance.weapon.ammo;
@@ -215,6 +219,7 @@ impl NativeModule for CaveStoryWeaponModule {
                 ])),
             });
         }
+        self.instances=staged;
         self.last_tick=clock.native_tick;
         Ok(StepOutput {
             state_changes:changed.into_values().collect(),
@@ -329,6 +334,28 @@ mod tests {
         assert_eq!(ammo(&loaded),8);
         assert_eq!(loaded.revision.0,2);
         assert_eq!(loaded.state[1],saved.state[1]); // arbitrary native metadata
+    }
+
+    #[test]
+    fn invalid_late_action_rolls_back_entire_native_tick(){
+        let adapter=CaveStoryWeaponAdapter;
+        let mut host=Host::new();
+        host.register_module(Id(101),
+            adapter.start_context(MODULE_ID,Id(101)).unwrap()).unwrap();
+        let entity=weapon(5,8);
+        host.instantiate(Id(101),entity.clone(),None).unwrap();
+
+        let result=host.step(Id(101),clock(1),&[
+            action(CONSUME,3),action(CONSUME,u64::MAX),
+        ]);
+        assert!(result.is_err());
+        assert_eq!(ammo(&host.snapshot(entity.id).unwrap()),5);
+        assert_eq!(host.snapshot(entity.id).unwrap().revision.0,0);
+
+        // Failed tick did not advance the native sequence either.
+        let output=host.step(Id(101),clock(1),&[action(CONSUME,2)]).unwrap();
+        assert!(accepted(&output.emitted_events[0]));
+        assert_eq!(ammo(&host.snapshot(entity.id).unwrap()),3);
     }
 
     #[test]
