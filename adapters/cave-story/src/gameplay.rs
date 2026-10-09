@@ -28,6 +28,8 @@ pub const DEFINITION_ID: Id = Id(0xc451_0033);
 const STAGE: &str = "player.stage-pxm";
 const STATE: &str = "player.movement-state";
 const CONTROL: &str = "player.controls";
+const WEAPON: &str = "player.native-weapon";
+const BULLETS: &str = "player.native-projectiles";
 const FRAME: &str = "player.frame";
 
 pub fn kind(name:&str)->TypeRef{
@@ -104,6 +106,24 @@ fn fresh_native(snapshot:&Snapshot)->ContractResult<(Simulation,u64)>{
         .map_err(|e|invalid(&format!("original PXM stage: {e:?}")))?;
     let (frame,tick)=state_frame(snapshot)?;
     engine.restore_frame(frame);
+    if let Some(part)=snapshot.state.iter().find(|part|part.type_ref==kind(WEAPON)){
+        let native=typed_map(&part.data)?;
+        let type_id=u16::try_from(read_u32(native,"weapon_type")?)
+            .map_err(|_|invalid("invalid original weapon ID"))?;
+        let ammo=u16::try_from(read_u32(native,"ammo")?)
+            .map_err(|_|invalid("original ammo outside u16 range"))?;
+        let max_ammo=u16::try_from(read_u32(native,"max_ammo")?)
+            .map_err(|_|invalid("original max ammo outside u16 range"))?;
+        let experience=u16::try_from(read_u32(native,"experience")?)
+            .map_err(|_|invalid("original weapon XP outside u16 range"))?;
+        let level=u16::try_from(read_u32(native,"level")?)
+            .map_err(|_|invalid("original native level outside u16 range"))?;
+        engine.equip_weapon(
+            crate::weapon::native_type(type_id)?,
+            crate::weapon::native_level(level)?,
+            experience,ammo,max_ammo,
+        );
+    }
     Ok((engine,tick))
 }
 fn buttons(v:&Value)->ContractResult<Buttons>{
@@ -225,16 +245,40 @@ impl LocalNativeModule for OriginalPlayer {
         };
         // All mandatory checkpoint fields were validated at instantiation.
         update_frame(&mut instance.snapshot,frame,next_native_tick)?;
+        // The original game inventory is the sole authority for ammunition.
+        // Emit its current state instead of reimplementing refire/ammo rules.
+        if let Some((wtype,level,experience,ammo,max_ammo))=
+            instance.sim.current_weapon_state(){
+            if let Some(part)=instance.snapshot.state.iter_mut()
+                .find(|part|part.type_ref==kind(WEAPON)){
+                let Value::Map(state)=&mut part.data else{
+                    self.poisoned=true;
+                    return Err(invalid("corrupt original native weapon state"));
+                };
+                state.insert("weapon_type".into(),Value::UInt(u64::from(wtype)));
+                state.insert("level".into(),Value::UInt(u64::from(level)));
+                state.insert("experience".into(),Value::UInt(u64::from(experience)));
+                state.insert("ammo".into(),Value::UInt(u64::from(ammo)));
+                state.insert("max_ammo".into(),Value::UInt(u64::from(max_ammo)));
+            }
+        }
         instance.snapshot.revision=Revision(next_revision);
         instance.last_tick=next_native_tick;
         instance.last_host_tick=Some(clock.native_tick);
         Ok(StepOutput{
             state_changes:vec![instance.snapshot.clone()],
             interactions:vec![],
-            emitted_events:vec![TypedValue{
-                type_ref:kind(FRAME),
-                data:find(&instance.snapshot.state,STATE)?.clone(),
-            }],
+            emitted_events:vec![
+                TypedValue{
+                    type_ref:kind(FRAME),
+                    data:find(&instance.snapshot.state,STATE)?.clone(),
+                },
+                TypedValue{
+                    type_ref:kind(BULLETS),
+                    data:Value::UInt(u64::try_from(instance.sim.active_bullets())
+                        .map_err(|_|invalid("original native bullet count overflow"))?),
+                },
+            ],
         })
     }
     fn snapshot(&self,handle:NativeHandle)->ContractResult<Snapshot>{

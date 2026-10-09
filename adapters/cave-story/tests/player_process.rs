@@ -279,3 +279,55 @@ fn empty_world_does_not_require_an_original_player_to_tick(){
     assert_eq!(outcome.state_changes.len(),1);
     assert_eq!(outcome.state_changes[0].entity_id,entity.id);
 }
+
+#[test]
+fn original_projectile_fires_inside_native_game_worker_and_consumes_source_ammo(){
+    let mut entity=player();
+    entity.components.push(TypedValue{
+        type_ref:kind("player.native-weapon"),
+        data:Value::Map(BTreeMap::from([
+            ("weapon_type".into(),Value::UInt(2)), // source Polar Star
+            ("level".into(),Value::UInt(1)),
+            ("experience".into(),Value::UInt(0)),
+            ("ammo".into(),Value::UInt(3)),
+            ("max_ammo".into(),Value::UInt(3)),
+        ])),
+    });
+    let id=entity.id;
+    let adapter=adapter();
+    let mut host=Host::new();
+    let ctx=Id(7020);
+    host.register_module(ctx,adapter.start_context(MODULE_ID,ctx).unwrap()).unwrap();
+    host.instantiate(ctx,entity.clone(),None).unwrap();
+    let input=InputIntent{
+        controller_entity_id:id,
+        intent:TypedValue{
+            type_ref:kind("player.controls"),
+            data:Value::Map(BTreeMap::from([
+                ("shoot".into(),Value::Bool(true)),
+            ])),
+        },
+    };
+    let output=host.step(ctx,tick(1),&[input]).unwrap();
+    let count=output.emitted_events.iter().find(|e|e.type_ref==kind("player.native-projectiles"))
+        .expect("upstream source projectile event");
+    assert!(matches!(&count.data,Value::UInt(n) if *n>0),
+        "real upstream engine must spawn its own native projectile");
+
+    let native=host.snapshot(id).unwrap();
+    let weapon=native.state.iter().find(|p|p.type_ref==kind("player.native-weapon")).unwrap();
+    let Value::Map(fields)=&weapon.data else{panic!("wrong source weapon checkpoint")};
+    assert_eq!(fields.get("ammo"),Some(&Value::UInt(2)));
+    assert_eq!(fields.get("max_ammo"),Some(&Value::UInt(3)));
+    assert_eq!(fields.get("weapon_type"),Some(&Value::UInt(2)));
+
+    // The source-defined inventory state, not a converted partner item,
+    // remains available when another engine process hosts the same entity.
+    host.remove(id).unwrap();
+    let mut restarted=Host::new();
+    let other=Id(7021);
+    restarted.register_module(other,adapter.start_context(MODULE_ID,other).unwrap()).unwrap();
+    restarted.instantiate(other,entity.clone(),Some(&native)).unwrap();
+    let saved=restarted.snapshot(id).unwrap();
+    assert_eq!(saved.state,native.state);
+}
