@@ -22,6 +22,55 @@ impl<'de> Deserialize<'de> for Id {
     }
 }
 
+mod finite_f64 {
+    use serde::{Deserialize,Deserializer,Serializer};
+    pub fn serialize<S:Serializer>(value:&f64, serializer:S)->Result<S::Ok,S::Error>{
+        if !value.is_finite(){
+            return Err(serde::ser::Error::custom("nonfinite game-native float"));
+        }
+        serializer.serialize_f64(*value)
+    }
+    pub fn deserialize<'de,D:Deserializer<'de>>(deserializer:D)->Result<f64,D::Error>{
+        let value=f64::deserialize(deserializer)?;
+        if !value.is_finite(){
+            return Err(serde::de::Error::custom("nonfinite game-native float"));
+        }
+        Ok(value)
+    }
+}
+mod finite_f64_array4 {
+    use serde::{Deserialize,Deserializer,Serializer};
+    pub fn serialize<S:Serializer>(value:&[f64;4],serializer:S)->Result<S::Ok,S::Error>{
+        if value.iter().any(|v|!v.is_finite()){
+            return Err(serde::ser::Error::custom("nonfinite quaternion"));
+        }
+        serde::Serialize::serialize(value,serializer)
+    }
+    pub fn deserialize<'de,D:Deserializer<'de>>(deserializer:D)->Result<[f64;4],D::Error>{
+        let values= <[f64;4]>::deserialize(deserializer)?;
+        if values.iter().any(|v|!v.is_finite()){
+            return Err(serde::de::Error::custom("nonfinite quaternion"));
+        }
+        Ok(values)
+    }
+}
+mod finite_f64_array16 {
+    use serde::{Deserialize,Deserializer,Serializer};
+    pub fn serialize<S:Serializer>(value:&[f64;16],serializer:S)->Result<S::Ok,S::Error>{
+        if value.iter().any(|v|!v.is_finite()){
+            return Err(serde::ser::Error::custom("nonfinite spatial frame matrix"));
+        }
+        serde::Serialize::serialize(value,serializer)
+    }
+    pub fn deserialize<'de,D:Deserializer<'de>>(deserializer:D)->Result<[f64;16],D::Error>{
+        let values= <[f64;16]>::deserialize(deserializer)?;
+        if values.iter().any(|v|!v.is_finite()){
+            return Err(serde::de::Error::custom("nonfinite spatial frame matrix"));
+        }
+        Ok(values)
+    }
+}
+
 mod decimal_u128 {
     use serde::{Deserialize, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(value: &u128, serializer: S)
@@ -49,7 +98,7 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     UInt(u64),
-    Float(f64),
+    Float(#[serde(with = "finite_f64")] f64),
     String(String),
     Bytes(Vec<u8>),
     Ref(Id),
@@ -89,8 +138,11 @@ pub struct EntityView {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Vec3 {
+    #[serde(with = "finite_f64")]
     pub x: f64,
+    #[serde(with = "finite_f64")]
     pub y: f64,
+    #[serde(with = "finite_f64")]
     pub z: f64,
 }
 
@@ -98,6 +150,7 @@ pub struct Vec3 {
 pub struct Transform {
     pub frame_id: Id,
     pub position: Vec3,
+    #[serde(with = "finite_f64_array4")]
     pub rotation_xyzw: [f64; 4],
     pub scale: Vec3,
 }
@@ -106,7 +159,9 @@ pub struct Transform {
 pub struct FrameMap {
     pub source: Id,
     pub destination: Id,
+    #[serde(with = "finite_f64_array16")]
     pub column_major_4x4: [f64; 16],
+    #[serde(with = "finite_f64")]
     pub source_units_per_destination_unit: f64,
 }
 
@@ -122,6 +177,7 @@ pub enum Geometry {
 pub struct GeometryRequest {
     pub frame_id: Id,
     pub center: Vec3,
+    #[serde(with = "finite_f64")]
     pub radius: f64,
     pub filter: Option<TypedValue>,
 }
@@ -143,6 +199,7 @@ pub struct SpatialHit {
     pub target: Option<Id>,
     pub position: Vec3,
     pub normal: Vec3,
+    #[serde(with = "finite_f64")]
     pub distance: f64,
     pub data: Option<TypedValue>,
 }
@@ -275,7 +332,9 @@ pub trait NativeModule: Send {
 pub struct CameraState {
     pub owner_entity_id: Id,
     pub frame_id: Id,
+    #[serde(with = "finite_f64_array16")]
     pub view_column_major_4x4: [f64; 16],
+    #[serde(with = "finite_f64_array16")]
     pub projection_column_major_4x4: [f64; 16],
     pub data: Option<TypedValue>,
 }
@@ -287,6 +346,7 @@ pub struct RenderFrame {
     pub camera: CameraState,
     pub width: u32,
     pub height: u32,
+    #[serde(with = "decimal_u128")]
     pub output_time_nanos: u128,
 }
 
