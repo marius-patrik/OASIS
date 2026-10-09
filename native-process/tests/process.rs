@@ -5,7 +5,7 @@ use std::process::Command;
 use oasis_contracts::{
     ClockStep,ContractError,ContractResult,DefinitionRef,EntityView,FrameMap,
     GeometryRequest,GeometryResult,Id,InputIntent,InteractionRequest,
-    ModuleDescriptor,NativeModule,Revision,Snapshot,SpatialHit,SpatialQuery,
+    ModuleDescriptor,NativeModule,Revision,SpatialHit,SpatialQuery,
     TypeRef,TypedValue,Value,WorldPort,
 };
 use oasis_native_process::ProcessModule;
