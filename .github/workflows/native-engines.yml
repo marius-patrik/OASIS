@@ -7,12 +7,14 @@ on:
       - .gitmodules
       - Cargo.toml
       - engines/**
+      - adapters/cave-story/**
       - .github/workflows/native-engines.yml
   pull_request:
     paths:
       - .gitmodules
       - Cargo.toml
       - engines/**
+      - adapters/cave-story/**
       - .github/workflows/native-engines.yml
   workflow_dispatch:
 
@@ -62,3 +64,6 @@ jobs:
           else
             cargo check --manifest-path engines/cave-story/Cargo.toml --lib --no-default-features
           fi
+      - name: Verify source-backed Cave Story OASIS native capability
+        if: matrix.name == 'cave-story'
+        run: cargo test --manifest-path adapters/cave-story/Cargo.toml --lib
