@@ -91,10 +91,17 @@ git -C engines/cave-story apply ../../adapters/cave-story/source-bridge.patch
 cargo test --manifest-path adapters/cave-story/Cargo.toml --lib player
 ```
 
-This is a **headless original player-tick entrypoint**, not a complete
+The same original source bridge now loads authentic PXM maps through
+`Map::load_pxm` and advances the player's original
+`PhysicalEntity::tick_map_collisions` immediately after the original
+`Player::tick`, as `GameScene::tick_world` does. The CI fixture constructs
+a native-format solid ground and tests that the actual source game's
+collision flags and player displacement resolve contact. No tile collision
+formulas are copied into OASIS.
+
+This is **headless original player movement and tile physics**, not a complete
 playable OASIS world or checkpoint-compatible original game scene.
-The native scene collision response, original camera/render pipeline,
-inventory/projectiles, and full opaque player-state serialization
-remain open. The existing worker protocol can host this non-`Send`
+Native scene NPCs, projectiles, cameras/renderers, original world script
+lifecycle and complete opaque player-state serialization remain open. The existing worker protocol can host this non-`Send`
 engine context once its lifecycle and complete native snapshot rules
 are integrated.
