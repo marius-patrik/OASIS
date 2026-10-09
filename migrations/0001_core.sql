@@ -205,7 +205,13 @@ CREATE TABLE components (
   type_id UUID NOT NULL REFERENCES types(id),
   presence_id UUID,
   slot TEXT NOT NULL DEFAULT 'default',
-  data JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(data) = 'object'),
+  -- Source-native components use the same lossless tagged Value codec as
+  -- durable snapshots, rather than ambiguous untyped JSON.
+  data JSONB NOT NULL DEFAULT '{"k":"map","v":{}}'::jsonb
+    CHECK (jsonb_typeof(data) = 'object'
+       AND data ? 'k'
+       AND data->>'k' IN ('null','bool','int','uint','float',
+                         'string','bytes','ref','sequence','map')),
   revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
   FOREIGN KEY(presence_id, entity_id) REFERENCES presences(id, entity_id),
   UNIQUE NULLS NOT DISTINCT(entity_id, type_id, presence_id, slot)
