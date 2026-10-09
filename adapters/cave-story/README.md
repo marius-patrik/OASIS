@@ -134,3 +134,22 @@ Run after applying the pinned upstream patch:
 ```sh
 cargo test --manifest-path adapters/cave-story/Cargo.toml --test player_process
 ```
+
+## Original weapons and projectiles in the player worker
+
+The pinned Cave Story source bridge also executes original
+`Inventory::tick_weapons`, `Weapon::tick`, `BulletManager::tick_bullets`
+and `BulletManager::tick_map_collisions` in upstream scene update order.
+Weapons are selected through their original `WeaponType` and
+`WeaponLevel` enums, not translated into platform combat rules.
+The `player.native-weapon` component contains original weapon type, level,
+experience, ammunition, and maximum ammunition. OASIS snapshots reflect
+the original game inventory after each tick and emit the count of live
+original-engine projectiles. Native CI exercises actual Polar Star projectile
+spawning, native ammunition consumption and recovery of weapon inventory
+state in another game-worker process.
+
+**Important:** Active projectile state and internal weapon cooldown timers
+are *not* yet serialized. Restarting the player preserves source weapon ammo
+but does not restore in-flight projectiles or exact firing timing; this
+remains a partial, not fully lossless, native game checkpoint.
