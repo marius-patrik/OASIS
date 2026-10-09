@@ -42,7 +42,7 @@ fn field_u16(map: &BTreeMap<String, Value>, name: &str) -> ContractResult<u16> {
     };
     u16::try_from(*value).map_err(|_|invalid("source-native weapon field exceeds u16"))
 }
-fn native_type(id: u16) -> ContractResult<WeaponType> {
+pub(crate) fn native_type(id: u16) -> ContractResult<WeaponType> {
     // The mapping is to the SOURCE game enum, not to another game's weapons.
     Ok(match id {
         0 => WeaponType::None,
