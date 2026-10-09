@@ -65,3 +65,36 @@ cargo test --manifest-path adapters/cave-story/Cargo.toml --test process
 This **does not** expose the full upstream player tick or scene renderer.
 Those upstream modules are private and require a source-native bridge, not
 a replica Cave Story physics/controller model in OASIS.
+
+## Original player tick bridge (source patch)
+
+The [reviewable source patch](source-bridge.patch) exposes a dedicated
+`doukutsu_rs::oasis_bridge::Simulation` API from the **pinned original
+game source**. Its `tick()` directly invokes upstream
+`GameEntity::tick(&mut Player, &mut SharedGameState, &NPCList)`; all
+acceleration, drag, movement, animation and player rules remain in the
+original engine. The bridge owns the game's native headless
+`Context`, `SharedGameState`, built-in filesystem, player, NPC list,
+and a source-native `PlayerController` implementation driven by the
+provided directional/jump/shoot buttons.
+
+The pinned submodule is verified by commit hash *before* applying this
+patch at native CI build time. The patch is tracked in OASIS; it does
+not introduce a fake movement solver or fork unrelated game behavior.
+
+Reproduce the source-native player tests locally:
+
+```sh
+git submodule update --init --recursive
+git -C engines/cave-story apply --check ../../adapters/cave-story/source-bridge.patch
+git -C engines/cave-story apply ../../adapters/cave-story/source-bridge.patch
+cargo test --manifest-path adapters/cave-story/Cargo.toml --lib player
+```
+
+This is a **headless original player-tick entrypoint**, not a complete
+playable OASIS world or checkpoint-compatible original game scene.
+The native scene collision response, original camera/render pipeline,
+inventory/projectiles, and full opaque player-state serialization
+remain open. The existing worker protocol can host this non-`Send`
+engine context once its lifecycle and complete native snapshot rules
+are integrated.
