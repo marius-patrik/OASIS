@@ -9,6 +9,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
+oasis-native-process = { path = "../../native-process" }
 oasis-contracts = { path = "../../contracts" }
 doukutsu-rs = { path = "../../engines/cave-story", default-features = false }
 
