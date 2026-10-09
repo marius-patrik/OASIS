@@ -112,7 +112,17 @@ fn fresh_native(snapshot:&Snapshot)->ContractResult<(Simulation,u64)>{
             .map_err(|_|invalid("invalid original weapon ID"))?;
         let ammo=u16::try_from(read_u32(native,"ammo")?)
             .map_err(|_|invalid("original ammo outside u16 range"))?;
-        engine.equip_weapon(crate::weapon::native_type(type_id)?,ammo);
+        let max_ammo=u16::try_from(read_u32(native,"max_ammo")?)
+            .map_err(|_|invalid("original max ammo outside u16 range"))?;
+        let experience=u16::try_from(read_u32(native,"experience")?)
+            .map_err(|_|invalid("original weapon XP outside u16 range"))?;
+        let level=u16::try_from(read_u32(native,"level")?)
+            .map_err(|_|invalid("original native level outside u16 range"))?;
+        engine.equip_weapon(
+            crate::weapon::native_type(type_id)?,
+            crate::weapon::native_level(level)?,
+            experience,ammo,max_ammo,
+        );
     }
     Ok((engine,tick))
 }
@@ -237,13 +247,17 @@ impl LocalNativeModule for OriginalPlayer {
         update_frame(&mut instance.snapshot,frame,next_native_tick)?;
         // The original game inventory is the sole authority for ammunition.
         // Emit its current state instead of reimplementing refire/ammo rules.
-        if let Some((ammo,max_ammo))=instance.sim.current_weapon_ammo(){
+        if let Some((wtype,level,experience,ammo,max_ammo))=
+            instance.sim.current_weapon_state(){
             if let Some(part)=instance.snapshot.state.iter_mut()
                 .find(|part|part.type_ref==kind(WEAPON)){
                 let Value::Map(state)=&mut part.data else{
                     self.poisoned=true;
                     return Err(invalid("corrupt original native weapon state"));
                 };
+                state.insert("weapon_type".into(),Value::UInt(u64::from(wtype)));
+                state.insert("level".into(),Value::UInt(u64::from(level)));
+                state.insert("experience".into(),Value::UInt(u64::from(experience)));
                 state.insert("ammo".into(),Value::UInt(u64::from(ammo)));
                 state.insert("max_ammo".into(),Value::UInt(u64::from(max_ammo)));
             }
