@@ -1,0 +1,136 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -17,6 +17,7 @@
+ mod entity;
+ mod framework;
+ pub mod game;
++pub mod oasis_bridge;
+ mod graphics;
+ mod i18n;
+ mod input;
+diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
+new file mode 100644
+--- /dev/null
++++ b/src/oasis_bridge.rs
+@@ -0,0 +1,120 @@
++//! OASIS source-native headless entrypoint, applied as an exact patch to the
++//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
++use std::cell::RefCell;
++use std::rc::Rc;
++
++use crate::entity::GameEntity;
++use crate::framework::context::Context;
++use crate::framework::error::GameResult;
++use crate::game::filesystem_container::FilesystemContainer;
++use crate::game::npc::list::NPCList;
++use crate::game::player::Player;
++use crate::game::shared_game_state::SharedGameState;
++use crate::input::player_controller::PlayerController;
++
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub struct Buttons {
++    pub left: bool,
++    pub right: bool,
++    pub up: bool,
++    pub down: bool,
++    pub jump: bool,
++    pub shoot: bool,
++}
++#[derive(Clone, Default)]
++struct InputLatch {
++    current: Rc<RefCell<Buttons>>,
++    previous: Rc<RefCell<Buttons>>,
++}
++impl InputLatch {
++    fn held(&self)->Buttons{*self.current.borrow()}
++    fn pressed(&self)->Buttons{
++        let b=*self.current.borrow();
++        let p=*self.previous.borrow();
++        Buttons {
++            left:b.left&&!p.left,right:b.right&&!p.right,
++            up:b.up&&!p.up,down:b.down&&!p.down,
++            jump:b.jump&&!p.jump,shoot:b.shoot&&!p.shoot,
++        }
++    }
++}
++impl PlayerController for InputLatch {
++    fn update(&mut self,_state:&mut SharedGameState,_ctx:&mut Context)->GameResult{Ok(())}
++    fn update_trigger(&mut self){*self.previous.borrow_mut()=*self.current.borrow();}
++    fn move_up(&self)->bool{self.held().up}
++    fn move_left(&self)->bool{self.held().left}
++    fn move_down(&self)->bool{self.held().down}
++    fn move_right(&self)->bool{self.held().right}
++    fn prev_weapon(&self)->bool{false}
++    fn next_weapon(&self)->bool{false}
++    fn map(&self)->bool{false}
++    fn inventory(&self)->bool{false}
++    fn jump(&self)->bool{self.held().jump}
++    fn shoot(&self)->bool{self.held().shoot}
++    fn skip(&self)->bool{false}
++    fn strafe(&self)->bool{false}
++    fn trigger_up(&self)->bool{self.pressed().up}
++    fn trigger_left(&self)->bool{self.pressed().left}
++    fn trigger_down(&self)->bool{self.pressed().down}
++    fn trigger_right(&self)->bool{self.pressed().right}
++    fn trigger_prev_weapon(&self)->bool{false}
++    fn trigger_next_weapon(&self)->bool{false}
++    fn trigger_map(&self)->bool{false}
++    fn trigger_inventory(&self)->bool{false}
++    fn trigger_jump(&self)->bool{self.pressed().jump}
++    fn trigger_shoot(&self)->bool{self.pressed().shoot}
++    fn trigger_skip(&self)->bool{false}
++    fn trigger_strafe(&self)->bool{false}
++    fn trigger_menu_ok(&self)->bool{false}
++    fn trigger_menu_back(&self)->bool{false}
++    fn trigger_menu_pause(&self)->bool{false}
++    fn look_up(&self)->bool{self.held().up}
++    fn look_left(&self)->bool{self.held().left}
++    fn look_down(&self)->bool{self.held().down}
++    fn look_right(&self)->bool{self.held().right}
++    fn move_analog_x(&self)->f64{(self.held().right as i32-self.held().left as i32) as f64}
++    fn move_analog_y(&self)->f64{(self.held().down as i32-self.held().up as i32) as f64}
++    fn set_rumble(&mut self,_low_freq:u16,_hi_freq:u16,_ticks:u32){}
++}
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct PlayerFrame {
++    pub x:i32,pub y:i32,pub vel_x:i32,pub vel_y:i32,
++    pub life:u16,pub collision_flags:u32,
++}
++pub struct Simulation {
++    pub player:Player,
++    state:SharedGameState,
++    _context:Context,
++    _filesystem:FilesystemContainer,
++    npc_list:NPCList,
++    input:InputLatch,
++}
++impl Simulation {
++    pub fn new()->GameResult<Self>{
++        let mut context=Context::new();
++        context.headless=true;
++        let mut filesystem=FilesystemContainer::new();
++        filesystem.mount_fs(&mut context)?;
++        let mut state=SharedGameState::new(&mut context)?;
++        let mut player=Player::new(&mut state,&mut context);
++        player.cond.set_alive(true);
++        state.control_flags.set_control_enabled(true);
++        let input=InputLatch::default();
++        player.controller=Box::new(input.clone());
++        let (npc_list,_token)=NPCList::new();
++        Ok(Self{player,state,_context:context,_filesystem:filesystem,npc_list,input})
++    }
++    pub fn controls(&mut self,buttons:Buttons){*self.input.current.borrow_mut()=buttons;}
++    pub fn frame(&self)->PlayerFrame {
++        PlayerFrame {
++            x:self.player.x,y:self.player.y,
++            vel_x:self.player.vel_x,vel_y:self.player.vel_y,
++            life:self.player.life,collision_flags:self.player.flags.0,
++        }
++    }
++    pub fn tick(&mut self)->GameResult<PlayerFrame>{
++        self.player.tick(&mut self.state,&self.npc_list)?;
++        self.player.controller.update_trigger();
++        Ok(self.frame())
++    }
++}

@@ -57,6 +57,11 @@ jobs:
         run: |
           test "$(git -C "$GAME_PATH" rev-parse HEAD)" = "$EXPECTED_REVISION"
           test -f "$MANIFEST_PATH"
+      - name: Apply reviewed OASIS source bridge to pinned Cave Story checkout
+        if: matrix.name == 'cave-story'
+        run: |
+          git -C engines/cave-story apply --check ../../adapters/cave-story/source-bridge.patch
+          git -C engines/cave-story apply ../../adapters/cave-story/source-bridge.patch
       - name: Native source compiles independently
         env:
           GAME_NAME: ${{ matrix.name }}
