@@ -181,6 +181,17 @@ impl LocalNativeModule for OriginalPlayer {
     fn step(&mut self,clock:ClockStep,inputs:&[InputIntent],_world:&mut dyn WorldPort)
         ->ContractResult<StepOutput>{
         if self.poisoned{return Err(ContractError::StaleAuthority);}
+        // A world may have the originating game module installed while no
+        // character of that origin is present. Its native step is a no-op;
+        // otherwise one empty module could halt the entire world scheduler.
+        if self.instance.is_none(){
+            if !inputs.is_empty(){
+                return Err(invalid("no original player owns supplied inputs"));
+            }
+            return Ok(StepOutput{
+                state_changes:vec![],interactions:vec![],emitted_events:vec![],
+            });
+        }
         let instance=self.instance.as_mut().ok_or(ContractError::NotFound(self.context))?;
         if instance.last_host_tick.is_some_and(|last|clock.native_tick<=last){
             return Err(invalid("host world tick must advance"));
