@@ -17,7 +17,13 @@ authoritative interaction contracts through which they can coexist.
   state snapshots, authority fencing, and typed interaction routing.
 - [Pinned upstream native game sources](engines/README.md) for DOOM and Cave Story,
   both compiled independently in the [native-source CI](.github/workflows/native-engines.yml).
-  These sources are **not yet OASIS adapters**.
+- [Cave Story source-backed native modules](adapters/cave-story/) invoke the actual
+  upstream `doukutsu-rs` hitbox membership logic and weapon-ammunition
+  consume/refill methods. The adapter is registered through OASIS contracts,
+  preserves originating engine state and arbitrary snapshot metadata, and
+  has tests against the real upstream crate. **It is not a complete playable
+  Cave Story game:** original player movement, complete collision response,
+  projectile spawning, NPC logic, camera and rendering are still missing.
 - [Adapter catalog](runtime/src/catalog.rs) for transactional, collision-free
   native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
@@ -45,13 +51,6 @@ authoritative interaction contracts through which they can coexist.
   [Real database tests](service/tests/live_travel.rs) inject a destination
   engine failure, recover from the committed checkpoint in a new runtime,
   and verify successful return travel.
-- [Durable live travel](service/src/lib.rs) snapshots the original native
-  module, commits checkpoint and world authority atomically in PostgreSQL,
-  then activates the same module in the destination world. Failed engine
-  transitions quarantine native state for restart recovery. Real
-  [PostgreSQL regression tests](service/tests/live_travel.rs) inject
-  destination failure, verify no source duplication, recover the checkpoint,
-  and successfully travel back.
 - [Trusted runtime recovery service](service/src/lib.rs) verifies a persisted
   session, reads its current native state and authoritative world placement,
   and restores the original engine module through the generic runtime.
@@ -69,6 +68,8 @@ authoritative interaction contracts through which they can coexist.
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 python3 tests/verify_structure.py
+git submodule update --init --recursive
+cargo test --manifest-path adapters/cave-story/Cargo.toml --lib
 # With a disposable PostgreSQL 16 instance and PG* environment configured:
 psql -v ON_ERROR_STOP=1 -f migrations/0001_core.sql
 psql -v ON_ERROR_STOP=1 -f migrations/0002_indexes.sql
@@ -82,21 +83,20 @@ DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo te
 DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo test -p oasis-service --test postgres
 ```
 
-**Status:** This is a working foundation, **not yet a complete MMO**.
-The **actual DOOM and Cave Story adapters**, distributed live-travel orchestration across multiple server processes,
-production networking and client authentication,
-production networking/authentication, scalable
-interest-managed replication, and GPU compositing remain unimplemented.
-The PostgreSQL store and recovery service provide real persistent reads,
-transactional writes, and cold-start native-state recovery.
-Live travel is atomic at the SQL layer and coordinated with in-process native
-state transitions. Failed engine transitions are quarantined and can be
-restored from the committed native checkpoint. **Distributed** live travel
-between separate server processes remains incomplete, and long-running
-native steps and externally committed effects need additional fencing
-and cancellation to establish multi-server safety. The TCP gateway uses injected authentication and returns snapshot
-identifiers/revisions, not complete game-ready replicated state.
-Cross-game interactions are final black-box verification criteria,
-never hard-coded game-pair features.
+**Status:** Verified universal infrastructure and two **partial native Cave
+Story capabilities**, not yet a complete MMO or a complete original game
+adapter. DOOM has no playable OASIS adapter. Cave Story currently runs
+source-native hitbox and ammunition methods only, not its full player/weapon
+tick, renderer or game simulation.
+
+Live travel is atomic at the SQL layer and coordinated with in-process
+native transitions; a failed destination is quarantined and recoverable.
+Cross-process travel, cancellation of in-flight native steps, fencing of
+external effects, production networking/authentication, spatially filtered
+replication, GPU composition and full original game adapters remain open.
+The loopback development gateway is not production client networking.
+
+Cross-game behavior is **final black-box verification only**. No game-pair
+compatibility branches or transformations are implemented.
 
 No game assets or proprietary source code are distributed in this repository.
