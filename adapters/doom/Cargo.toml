@@ -9,6 +9,7 @@ license = "GPL-2.0-only"
 resolver = "2"
 
 [dependencies]
+oasis-native-process = { path = "../../native-process" }
 oasis-contracts = { path = "../../contracts" }
 room = { path = "../../engines/doom/room" }
 
