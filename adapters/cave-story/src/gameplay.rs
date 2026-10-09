@@ -130,6 +130,7 @@ struct PlayerInstance {
     sim: Simulation,
     snapshot: Snapshot,
     last_tick: u64,
+    last_host_tick: Option<u64>,
 }
 
 /// Runs only inside its own game worker process. The source engine's
@@ -174,16 +175,21 @@ impl LocalNativeModule for OriginalPlayer {
             return Err(invalid("foreign native player checkpoint"));
         }
         let (sim,last_tick)=fresh_native(&snapshot)?;
-        self.instance=Some(PlayerInstance{entity:entity.id,sim,snapshot,last_tick});
+        self.instance=Some(PlayerInstance{entity:entity.id,sim,snapshot,last_tick,last_host_tick:None});
         Ok(NativeHandle{context_id:self.context,native_slot:1})
     }
     fn step(&mut self,clock:ClockStep,inputs:&[InputIntent],_world:&mut dyn WorldPort)
         ->ContractResult<StepOutput>{
         if self.poisoned{return Err(ContractError::StaleAuthority);}
         let instance=self.instance.as_mut().ok_or(ContractError::NotFound(self.context))?;
-        if clock.native_tick<=instance.last_tick{
-            return Err(invalid("source-native player tick must advance"));
+        if instance.last_host_tick.is_some_and(|last|clock.native_tick<=last){
+            return Err(invalid("host world tick must advance"));
         }
+        // Native character ticks are intrinsic to the original game, not
+        // to whichever OASIS world shard currently hosts the character.
+        // The destination shard may have its own clock starting at zero.
+        let next_native_tick=instance.last_tick.checked_add(1)
+            .ok_or_else(||invalid("origin-native player clock overflow"))?;
         if inputs.len()>1 {return Err(invalid("only one native control state per tick"));}
         let control=if let Some(input)=inputs.first(){
             if input.controller_entity_id!=instance.entity ||
@@ -207,9 +213,10 @@ impl LocalNativeModule for OriginalPlayer {
             },
         };
         // All mandatory checkpoint fields were validated at instantiation.
-        update_frame(&mut instance.snapshot,frame,clock.native_tick)?;
+        update_frame(&mut instance.snapshot,frame,next_native_tick)?;
         instance.snapshot.revision=Revision(next_revision);
-        instance.last_tick=clock.native_tick;
+        instance.last_tick=next_native_tick;
+        instance.last_host_tick=Some(clock.native_tick);
         Ok(StepOutput{
             state_changes:vec![instance.snapshot.clone()],
             interactions:vec![],
@@ -231,6 +238,7 @@ impl LocalNativeModule for OriginalPlayer {
         let (sim,last_tick)=fresh_native(snapshot)?;
         self.instance=Some(PlayerInstance{
             entity:snapshot.entity_id,sim,snapshot:snapshot.clone(),last_tick,
+            last_host_tick:None,
         });
         Ok(())
     }
