@@ -32,3 +32,20 @@ Test:
 git submodule update --init --recursive
 cargo test --manifest-path adapters/doom/Cargo.toml --lib
 ```
+
+## Native OS process mode
+
+The [isolated DOOM worker](src/bin/oasis-worker.rs) hosts the original
+pinned source-backed numeric/geometry module in its own OS process. Native
+game globals therefore cannot be accidentally shared with other OASIS
+execution contexts. [Process tests](tests/process.rs) invoke actual DOOM
+16.16 fixed-point arithmetic through the universal IPC and verify native
+entity state survives snapshots.
+
+```sh
+cargo test --manifest-path adapters/doom/Cargo.toml --test process
+```
+
+This does **not** yet run the original DOOM thinker/gameplay loop, WAD
+resources or native rendering; those require a dedicated source-native
+worker bridge.
