@@ -20,6 +20,24 @@ mod tests {
             "upstream original movement should accelerate the player");
     }
 
+    #[test]
+    fn original_weapon_and_bullet_system_fires_on_source_player_input() {
+        use doukutsu_rs::game::weapon::WeaponType;
+        let mut sim=Simulation::new().expect("original headless engine");
+        let (pxm,attrib)=flat_native_stage();
+        sim.load_stage(&pxm,&attrib).expect("native original PXM reader");
+        sim.player.x=6*8192;
+        sim.player.y=2*8192;
+        sim.equip_weapon(WeaponType::PolarStar,3);
+        assert_eq!(sim.current_weapon_ammo(),Some((3,3)));
+        sim.controls(Buttons{shoot:true,..Buttons::default()});
+        sim.tick().expect("upstream original weapon and bullet tick");
+        assert!(sim.active_bullets()>0,
+            "original weapon logic should spawn an original-engine projectile");
+        assert_eq!(sim.current_weapon_ammo(),Some((2,3)),
+            "the original game must consume its own source-native ammunition");
+    }
+
     fn flat_native_stage() -> (Vec<u8>,Vec<u8>) {
         // A 12x12 Cave Story PXM v0x10 world with original solid attribute
         // 0x41 across the entire seventh row. No proprietary stage data.
