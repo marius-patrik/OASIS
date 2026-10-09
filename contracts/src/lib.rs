@@ -3,18 +3,47 @@
 //! IDs are abstract 128-bit values; the transport layer maps them to SQL UUIDs.
 
 use std::collections::BTreeMap;
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Id(pub u128);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+// JSON transports must not truncate global 128-bit object identities into
+// floating-point values. Native ID representations stay decimal strings.
+impl Serialize for Id {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok,S::Error> {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+impl<'de> Deserialize<'de> for Id {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self,D::Error> {
+        let s=String::deserialize(deserializer)?;
+        s.parse::<u128>().map(Id).map_err(serde::de::Error::custom)
+    }
+}
+
+mod decimal_u128 {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S)
+        -> Result<S::Ok,S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+    pub fn deserialize<'de,D: Deserializer<'de>>(deserializer: D)
+        -> Result<u128,D::Error> {
+        let text=String::deserialize(deserializer)?;
+        text.parse::<u128>().map_err(serde::de::Error::custom)
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TypeRef {
     pub namespace: String,
     pub name: String,
     pub version: u32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -28,28 +57,28 @@ pub enum Value {
     Map(BTreeMap<String, Value>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TypedValue {
     pub type_ref: TypeRef,
     pub data: Value,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Revision(pub u64);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DefinitionRef {
     pub id: Id,
     pub version: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NativeHandle {
     pub context_id: Id,
     pub native_slot: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityView {
     pub id: Id,
     pub definition: DefinitionRef,
@@ -58,14 +87,14 @@ pub struct EntityView {
     pub origin_module: Option<Id>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Vec3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transform {
     pub frame_id: Id,
     pub position: Vec3,
@@ -73,7 +102,7 @@ pub struct Transform {
     pub scale: Vec3,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FrameMap {
     pub source: Id,
     pub destination: Id,
@@ -81,7 +110,7 @@ pub struct FrameMap {
     pub source_units_per_destination_unit: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Geometry {
     TriangleMesh { asset_id: Id, transform: Transform },
     Aabb { frame_id: Id, minimum: Vec3, maximum: Vec3 },
@@ -89,7 +118,7 @@ pub enum Geometry {
     Custom(TypedValue),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GeometryRequest {
     pub frame_id: Id,
     pub center: Vec3,
@@ -97,19 +126,19 @@ pub struct GeometryRequest {
     pub filter: Option<TypedValue>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GeometryResult {
     pub shapes: Vec<Geometry>,
     pub revision: Revision,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpatialQuery {
     pub frame_id: Id,
     pub query: TypedValue,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpatialHit {
     pub target: Option<Id>,
     pub position: Vec3,
@@ -118,21 +147,21 @@ pub struct SpatialHit {
     pub data: Option<TypedValue>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorityStamp {
     pub resource_key: String,
     pub context_id: Id,
     pub epoch: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InteractionTarget {
     Entity(Id),
     World(Id),
     Region { frame_id: Id, geometry: Geometry },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InteractionRequest {
     pub id: Id,
     pub source_entity_id: Id,
@@ -142,34 +171,35 @@ pub struct InteractionRequest {
     pub source_tick: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InteractionDisposition {
     Applied { result: Option<TypedValue> },
     Rejected { reason: String },
     Deferred,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InteractionResult {
     pub request_id: Id,
     pub disposition: InteractionDisposition,
     pub effects: Vec<TypedValue>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct ClockStep {
     pub native_tick: u64,
+    #[serde(with = "decimal_u128")]
     pub simulation_time_nanos: u128,
     pub delta_nanos: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputIntent {
     pub controller_entity_id: Id,
     pub intent: TypedValue,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModuleDescriptor {
     pub engine_id: Id,
     pub module_id: Id,
@@ -179,7 +209,7 @@ pub struct ModuleDescriptor {
     pub required_interfaces: Vec<TypeRef>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ContractError {
     Unsupported { interface: TypeRef, reason: String },
     NotFound(Id),
@@ -191,7 +221,7 @@ pub enum ContractError {
 
 pub type ContractResult<T> = Result<T, ContractError>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     pub entity_id: Id,
     pub state: Vec<TypedValue>,
@@ -199,7 +229,7 @@ pub struct Snapshot {
     pub binary_artifact: Option<Id>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StepOutput {
     pub state_changes: Vec<Snapshot>,
     pub interactions: Vec<InteractionRequest>,
