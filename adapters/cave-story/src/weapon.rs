@@ -59,7 +59,7 @@ pub(crate) fn native_type(id: u16) -> ContractResult<WeaponType> {
         _ => return Err(invalid("unsupported upstream Cave Story weapon ID")),
     })
 }
-fn native_level(id: u16) -> ContractResult<WeaponLevel> {
+pub(crate) fn native_level(id: u16) -> ContractResult<WeaponLevel> {
     Ok(match id {
         0 => WeaponLevel::None,
         1 => WeaponLevel::Level1,
