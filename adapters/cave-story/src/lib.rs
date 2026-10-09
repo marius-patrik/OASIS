@@ -8,6 +8,7 @@
 
 pub mod weapon;
 pub mod stage;
+pub mod gameplay;
 #[cfg(test)]
 mod player;
 
