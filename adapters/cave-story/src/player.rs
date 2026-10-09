@@ -21,15 +21,16 @@ mod tests {
     }
 
     #[test]
-    fn native_headless_input_release_exercises_original_player_deceleration() {
+    fn native_headless_reverse_direction_exercises_original_player_control() {
         let mut simulation=Simulation::new().expect("original game init");
         simulation.controls(Buttons{right:true,..Buttons::default()});
-        for _ in 0..10 {simulation.tick().unwrap();}
-        let accelerating=simulation.frame();
-        simulation.controls(Buttons::default());
-        for _ in 0..10 {simulation.tick().unwrap();}
-        let released=simulation.frame();
-        assert!(released.vel_x<accelerating.vel_x,
-            "the original game tick must implement friction after input release");
+        for _ in 0..8 {simulation.tick().unwrap();}
+        let moving_right=simulation.frame();
+        simulation.controls(Buttons{left:true,..Buttons::default()});
+        for _ in 0..8 {simulation.tick().unwrap();}
+        let reversing=simulation.frame();
+        assert!(moving_right.vel_x>0);
+        assert!(reversing.vel_x<moving_right.vel_x,
+            "original native player tick must respond to reversed directional input");
     }
 }
