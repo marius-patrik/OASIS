@@ -1,9 +1,9 @@
 //! Executable contract fixture; one process per native execution context.
 //! This fixture deliberately depends on neither DOOM nor Cave Story.
 use oasis_contracts::{
-    AuthorityStamp,ClockStep,ContractError,ContractResult,DefinitionRef,
+    AuthorityStamp,ClockStep,ContractError,ContractResult,
     EntityView,FrameMap,GeometryRequest,Id,InputIntent,InteractionRequest,
-    InteractionTarget,ModuleDescriptor,NativeHandle,Revision,Snapshot,
+    InteractionTarget,ModuleDescriptor,NativeHandle,Snapshot,
     SpatialQuery,StepOutput,TypeRef,TypedValue,Value,Vec3,WorldPort,
 };
 use oasis_native_process::{serve_worker,LocalNativeModule};
@@ -84,7 +84,7 @@ impl LocalNativeModule for Fixture {
         })
     }
     fn snapshot(&self,handle:NativeHandle)->ContractResult<Snapshot>{
-        if handle!=NativeHandle{context_id:CONTEXT,native_slot:1}{
+        if handle != (NativeHandle{context_id:CONTEXT,native_slot:1}) {
             return Err(ContractError::StaleAuthority);
         }
         self.live.clone().ok_or_else(||bad("no entity"))
@@ -102,7 +102,5 @@ impl LocalNativeModule for Fixture {
     }
 }
 fn main(){
-    let _=DefinitionRef{id:Id(1),version:1};
-    let _=Revision(0);
     serve_worker(Fixture{live:None,tick:0}).expect("native worker protocol failed");
 }
