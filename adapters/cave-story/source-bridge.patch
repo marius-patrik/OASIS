@@ -13,7 +13,7 @@ diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/oasis_bridge.rs
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,206 @@
 +//! OASIS source-native headless entrypoint, applied as an exact patch to the
 +//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
 +use std::cell::RefCell;
@@ -203,16 +203,18 @@ new file mode 100644
 +        if let Some(stage)=self.stage.as_mut(){
 +            self.player.tick_map_collisions(&mut self.state,&self.npc_list,stage);
 +        }
-+        // Continue the original GameScene::tick_world weapon/bullet order.
-+        // Original gameplay code determines ammo, refire timing, projectile
-+        // spawning, native projectile movement and map collision.
-+        self.inventory.tick_weapons(&mut self.state,&mut self.player,
-+            TargetPlayer::Player1,&mut self.bullets);
-+        self.bullets.tick_bullets(&mut self.state,
-+            [&self.player,&self.second_player],&self.npc_list);
++        // Match original GameScene::tick_world: bullet map collision,
++        // inventory weapon firing, then projectile movement. Source-game
++        // code owns native ammunition, cooldowns and collision semantics.
 +        if let Some(stage)=self.stage.as_mut(){
 +            self.bullets.tick_map_collisions(&mut self.state,&self.npc_list,stage);
 +        }
++        if self.state.control_flags.control_enabled(){
++            self.inventory.tick_weapons(&mut self.state,&mut self.player,
++                TargetPlayer::Player1,&mut self.bullets);
++        }
++        self.bullets.tick_bullets(&mut self.state,
++            [&self.player,&self.second_player],&self.npc_list);
 +        self.state.tick_carets();
 +        self.player.controller.update_trigger();
 +        Ok(self.frame())
