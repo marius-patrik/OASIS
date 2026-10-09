@@ -6,3 +6,5 @@ license = "MIT OR Apache-2.0"
 description = "Game-independent native module contracts for OASIS"
 
 [dependencies]
+
+serde = { version = "1", features = ["derive"] }
