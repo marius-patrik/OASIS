@@ -26,6 +26,9 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 ## Gate 2: Universal runtime and synthetic adapters
 
 - [x] Compile and test `contracts` in CI.
+- [x] Execute the pinned Cave Story and DOOM source-backed modules inside
+  independent game-worker OS processes with the unchanged universal ABI,
+  including original item snapshots/restart and native action execution.
 - [x] Implement versioned subprocess control ABI for isolated original engines
   (source identity, native snapshots, native steps, and all five synchronous
   WorldPort callbacks), with a real executable worker conformance test.
