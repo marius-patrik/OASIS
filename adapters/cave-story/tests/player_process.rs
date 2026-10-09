@@ -260,3 +260,22 @@ fn authoritative_world_runner_executes_original_player_in_another_world() {
     assert!(updated[0].revision.0>entity.revision.0);
     assert_eq!(updated[0].state[2],entity.components[2]);
 }
+
+#[test]
+fn empty_world_does_not_require_an_original_player_to_tick(){
+    let adapter=adapter();
+    let mut host=Host::new();
+    let ctx=Id(7010);
+    host.register_module(ctx,adapter.start_context(MODULE_ID,ctx).unwrap()).unwrap();
+    let empty=host.step(ctx,tick(1),&[]).unwrap();
+    assert!(empty.state_changes.is_empty());
+    assert!(empty.emitted_events.is_empty());
+
+    // A character can then arrive after the destination world's clock has
+    // been running independently of this originating game module.
+    let entity=player();
+    host.instantiate(ctx,entity.clone(),None).unwrap();
+    let outcome=host.step(ctx,tick(2),&[controls(entity.id,true)]).unwrap();
+    assert_eq!(outcome.state_changes.len(),1);
+    assert_eq!(outcome.state_changes[0].entity_id,entity.id);
+}
