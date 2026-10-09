@@ -147,3 +147,16 @@ fn source_process_never_authorizes_unloaded_or_foreign_controllers(){
     assert!(result.is_ok());
     assert_eq!(world.calls.get(),5);
 }
+
+#[test]
+fn worker_wire_rejects_nan_and_preserves_maximal_global_identifiers(){
+    assert!(serde_json::to_vec(&Value::Float(f64::NAN)).is_err());
+    assert!(serde_json::to_vec(&Value::Float(f64::INFINITY)).is_err());
+    let encoded=serde_json::to_vec(&Value::Ref(Id(u128::MAX))).unwrap();
+    let decoded:Value=serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded,Value::Ref(Id(u128::MAX)));
+    let invalid=serde_json::from_str::<Value>(
+        r#"{"Float":"NaN"}"#,
+    );
+    assert!(invalid.is_err());
+}
