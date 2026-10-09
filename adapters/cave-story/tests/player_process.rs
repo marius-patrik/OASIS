@@ -168,3 +168,95 @@ fn native_player_checkpoint_rejects_foreign_identity_and_malformed_source_stage(
     m.insert("pxm".into(),Value::Bytes(vec![1,2,3]));
     assert!(host.instantiate(ctx,entity,None).is_err());
 }
+
+#[test]
+fn authoritative_world_runner_executes_original_player_in_another_world() {
+    use std::sync::{Arc,Mutex};
+    use std::time::{Duration,SystemTime,Instant};
+    use oasis_runtime::scheduler::{WorldRunner,TickAuthorizer};
+    use oasis_runtime::universe::{
+        Universe,Principal,PersistedPlacement,SessionAuthority,SimulationLease,
+    };
+    use oasis_contracts::ContractResult;
+
+    struct TestAuthority;
+    impl SessionAuthority for TestAuthority {
+        fn authenticate(&self,credential:&str)->ContractResult<Principal>{
+            if credential!="trusted-session"{
+                return Err(ContractError::InvalidData("invalid session".into()));
+            }
+            Ok(Principal{
+                user_id:Id(7),player_id:Id(8),character_id:Id(u128::MAX-2),
+                expires_at:SystemTime::now()+Duration::from_secs(60),
+            })
+        }
+    }
+    struct TestLease;
+    impl TickAuthorizer for TestLease {
+        fn authorize(&self,_world:Id,lease:SimulationLease)->ContractResult<()>{
+            if lease.epoch!=1 {
+                return Err(ContractError::StaleAuthority);
+            }
+            Ok(())
+        }
+    }
+
+    let source_world=Id(0x8000);
+    let destination_world=Id(0x9000);
+    let first_context=Id(0x8001);
+    let second_context=Id(0x9001);
+    let adapter=adapter();
+    let entity=player();
+    let mut universe=Universe::new();
+    universe.add_world(source_world).unwrap();
+    universe.add_world(destination_world).unwrap();
+    universe.add_module(source_world,first_context,
+        adapter.start_context(MODULE_ID,first_context).unwrap()).unwrap();
+    universe.add_module(destination_world,second_context,
+        adapter.start_context(MODULE_ID,second_context).unwrap()).unwrap();
+    universe.recover_entity(entity.clone(),None,Some(PersistedPlacement{
+        world_instance_id:source_world,
+        authority_context_id:first_context,
+        authority_epoch:1,
+    })).unwrap();
+
+    let ticket=universe.connect(&TestAuthority,"trusted-session").unwrap();
+    let source_state=universe.observe(ticket).unwrap();
+    assert_eq!(source_state[0].state,entity.components);
+    // The source-native module is independently instantiated in the
+    // destination world, with no game-pair or per-world compatibility code.
+    universe.enter_world(ticket,destination_world).unwrap();
+    assert_eq!(universe.presence(entity.id),Some(destination_world));
+    assert_eq!(universe.observe(ticket).unwrap()[0].entity_id,entity.id);
+    universe.input(ticket,TypedValue{
+        type_ref:kind("player.controls"),
+        data:Value::Map(BTreeMap::from([
+            ("right".into(),Value::Bool(true))
+        ])),
+    }).unwrap();
+
+    let shared=Arc::new(Mutex::new(universe));
+    let runner=WorldRunner::start(
+        Arc::clone(&shared),destination_world,
+        Duration::from_millis(10),Arc::new(TestLease),
+    ).unwrap();
+    let deadline=Instant::now()+Duration::from_secs(2);
+    loop {
+        let progressed={
+            let mut guard=shared.lock().unwrap();
+            guard.observe(ticket).unwrap()[0].revision.0>entity.revision.0
+        };
+        if progressed || Instant::now()>=deadline {
+            assert!(progressed,"source native player was not ticked by authoritative world runner");
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(runner.last_error().is_none(),"original native worker lost authority during tick");
+    drop(runner);
+    let mut guard=shared.lock().unwrap();
+    let updated=guard.observe(ticket).unwrap();
+    assert_eq!(updated[0].entity_id,entity.id);
+    assert!(updated[0].revision.0>entity.revision.0);
+    assert_eq!(updated[0].state[2],entity.components[2]);
+}
