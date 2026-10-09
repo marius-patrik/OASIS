@@ -8,6 +8,8 @@
 
 pub mod weapon;
 pub mod stage;
+#[cfg(test)]
+mod player;
 
 use std::collections::BTreeMap;
 
