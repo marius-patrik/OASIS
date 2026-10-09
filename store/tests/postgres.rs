@@ -67,7 +67,19 @@ fn durable_native_state_travels_between_worlds_without_replacing_the_engine() {
     assert_eq!(session.player_id,id(0x9));
     let entity=store.load_entity(id(0x7)).unwrap().unwrap();
     assert_eq!(entity.origin_module,Some(id(0x5)));
-    assert!(!entity.components.is_empty());
+    assert_eq!(entity.components.len(),1);
+    assert_eq!(entity.components[0].type_ref.namespace,"test");
+    let oasis_contracts::Value::Map(native)=&entity.components[0].data else {
+        panic!("typed source-native entity component did not load");
+    };
+    assert_eq!(native.get("bytecode"),
+        Some(&oasis_contracts::Value::Bytes(vec![0,1,254,255])));
+    assert_eq!(native.get("maxUnsigned"),
+        Some(&oasis_contracts::Value::UInt(u64::MAX)));
+    assert_eq!(native.get("nativeRef"),
+        Some(&oasis_contracts::Value::Ref(id(u128::MAX))));
+    assert!(matches!(native.get("gameSpecific"),
+        Some(oasis_contracts::Value::Sequence(_))));
     assert_eq!(store.active_presence(id(0x7)).unwrap().unwrap().presence_id,id(0x15));
     assert!(store.latest_state(id(0x7)).unwrap().is_none());
 

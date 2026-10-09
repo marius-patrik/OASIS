@@ -67,6 +67,17 @@ The executable PostgreSQL DDL is in:
 
 The listed physical tables are *not* one table per game. A registered type is addressed as `(namespace, name, version)`; its `schema` specifies the permissible shape of each namespaced JSONB `data` payload. Components let arbitrary game-specific values exist on a platform character without adding SQL columns.
 
+**Native component wire representation:** `components.data` and
+`state_documents` use the same recursively tagged `Value` codec
+(`k` discriminant with `v` payload). This preserves original
+`Bytes`, signed/unsigned integers, 128-bit references, nested
+sequences/maps and opaque game extensions across first-time entity
+loads *and* subsequent native snapshots. The canonical empty
+component is `{"k":"map","v":{}}`; untagged JSON objects are not
+valid native component values. General-purpose record `data`
+fields elsewhere remain freely extensible JSONB. Unknown value tags
+fail explicitly rather than falling back to lossy JSON coercion.
+
 **Invariants enforced in SQL:** foreign keys, identity uniqueness, casefolded player handles, one active authoritative presence per entity, at most one exclusive location, compatible session-user-player-character associations, component presence ownership, nonnegative revisions, and format/shape checks on JSONB objects.
 
 **Invariants enforced by the universal data service:** type-schema validation; immutable published definition/module versions; entity subtype registration (`items`, `characters`); containment-cycle prevention; logical consistency between registered world frames and presences; authorization; atomic transition protocols; event append-only rules and monotonic authority epochs. Triggers or stored procedures can harden these after the service semantics are tested.
