@@ -483,4 +483,30 @@ BEGIN
   END IF;
 END $$;
 
+
+-- Canonical typed components must be unambiguous to every native adapter.
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO components(id,entity_id,type_id,slot,data)
+    VALUES('00000000-0000-0000-0000-000000000098',
+           '00000000-0000-0000-0000-000000000007',
+           '00000000-0000-0000-0000-000000000001',
+           'invalid-plain-json', '{}'::jsonb);
+    RAISE EXCEPTION 'untagged native component was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  INSERT INTO components(id,entity_id,type_id,slot)
+  VALUES('00000000-0000-0000-0000-000000000099',
+         '00000000-0000-0000-0000-000000000007',
+         '00000000-0000-0000-0000-000000000001',
+         'native-default');
+  IF (SELECT data FROM components
+      WHERE id='00000000-0000-0000-0000-000000000099')
+      IS DISTINCT FROM '{"k":"map","v":{}}'::jsonb THEN
+    RAISE EXCEPTION 'native component default lost its type';
+  END IF;
+END $$;
+
 ROLLBACK;
