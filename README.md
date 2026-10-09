@@ -30,6 +30,12 @@ authoritative interaction contracts through which they can coexist.
   player movement, complete collision response, projectiles, NPCs,
   camera/rendering, and DOOM's gameplay globals/thinker loop, native
   controller, renderer and WAD loading remain unintegrated.
+- [Original game worker executables](adapters/) run the actual pinned
+  Cave Story hitbox, weapon and stage functions, and DOOM source-native
+  physics/geometry routines, in **separate OS processes** using the universal
+  process ABI. Dedicated source CI verifies real process execution and native
+  state/restart behavior for both games. Complete native gameplay/rendering
+  entrypoints remain unfinished.
 - [Game-independent native subprocess boundary](native-process/) runs each
   source engine in an isolated address space, so DOOM's mutable process-global
   state and Cave Story's non-`Send` scene resources need not be moved into the

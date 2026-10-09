@@ -124,6 +124,32 @@ impl<T: NativeModule> LocalNativeModule for T {
     }
 }
 
+/// Adapt an already-existing Send-native module for the out-of-process
+/// worker without changing or copying its source-game implementation.
+pub struct BoxedNative(pub Box<dyn NativeModule>);
+impl LocalNativeModule for BoxedNative {
+    fn descriptor(&self)->ModuleDescriptor{self.0.descriptor()}
+    fn instantiate(&mut self,entity:&EntityView,saved:Option<&Snapshot>)
+        ->ContractResult<NativeHandle>{self.0.instantiate(entity,saved)}
+    fn step(&mut self,clock:ClockStep,inputs:&[InputIntent],world:&mut dyn WorldPort)
+        ->ContractResult<StepOutput>{self.0.step(clock,inputs,world)}
+    fn snapshot(&self,handle:NativeHandle)->ContractResult<Snapshot>{
+        self.0.snapshot(handle)
+    }
+    fn restore(&mut self,handle:NativeHandle,snapshot:&Snapshot)->ContractResult<()>{
+        self.0.restore(handle,snapshot)
+    }
+    fn remove(&mut self,handle:NativeHandle)->ContractResult<()>{
+        self.0.remove(handle)
+    }
+}
+/// Launch the protocol around an existing native module in a game-specific
+/// worker executable. Full original game contexts can instead implement
+/// LocalNativeModule directly when their scene types are not Send.
+pub fn serve_native_boxed(module:Box<dyn NativeModule>)->io::Result<()>{
+    serve_worker(BoxedNative(module))
+}
+
 /// Uses the original WorldPort callback rather than substituting a fake
 /// environment in the game-worker process. Calls are synchronous and cannot
 /// escape server-side lease/scheduling decisions.

@@ -46,3 +46,22 @@ It does **not** infer physics from arbitrary tile codes, replace Cave Story's
 slope/tile collision response, provide a renderer or full stage lifecycle, or
 make the game playable. Those require integrating the game's actual scene,
 player, physics, NPC, and rendering contexts.
+
+## Native OS process mode
+
+The same original Cave Story hitbox, ammunition and PXM-stage modules now
+have a [standalone native worker](src/bin/oasis-worker.rs), launched by the
+generic `ProcessModule`. In the child, each module invokes the exact same
+pinned `doukutsu-rs` functions; OASIS only forwards commands, native
+snapshots and authoritative WorldPort calls. The [process tests](tests/process.rs)
+prove all three modules execute in separate OS processes, and that a weapon
+retains its globally stable ID, ammunition, arbitrary native metadata and
+source-specific refill semantics after restarting into another native worker.
+
+```sh
+cargo test --manifest-path adapters/cave-story/Cargo.toml --test process
+```
+
+This **does not** expose the full upstream player tick or scene renderer.
+Those upstream modules are private and require a source-native bridge, not
+a replica Cave Story physics/controller model in OASIS.
