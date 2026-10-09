@@ -107,23 +107,6 @@ pub fn decode_snapshot(entity_id: Id, doc: &Json) -> StoreResult<Snapshot> {
         .transpose()?;
     Ok(Snapshot{entity_id,state,revision:Revision(revision),binary_artifact})
 }
-pub fn json_component(value: &Json) -> StoreResult<Value> {
-    Ok(match value {
-        Json::Null => Value::Null,
-        Json::Bool(v) => Value::Bool(*v),
-        Json::Number(n) => {
-            if let Some(i)=n.as_i64(){Value::Int(i)}
-            else if let Some(u)=n.as_u64(){Value::UInt(u)}
-            else {Value::Float(n.as_f64().ok_or_else(||invalid("bad number"))?)}
-        }
-        Json::String(s) => Value::String(s.clone()),
-        Json::Array(xs)=>Value::Sequence(xs.iter()
-            .map(json_component).collect::<StoreResult<_>>()?),
-        Json::Object(map)=>Value::Map(map.iter()
-            .map(|(k,v)|Ok((k.clone(),json_component(v)?)))
-            .collect::<StoreResult<_>>()?),
-    })
-}
 
 #[cfg(test)]
 mod tests {
@@ -152,6 +135,21 @@ mod tests {
         assert_eq!(loaded.binary_artifact,s.binary_artifact);
         assert_eq!(loaded.state,s.state);
     }
+    #[test]
+    fn canonical_component_encoding_keeps_binary_unsigned_references_and_literal_keys() {
+        let input=Value::Map(BTreeMap::from([
+            ("k".into(),Value::String("ordinary-key".into())),
+            ("v".into(),Value::Int(-1)),
+            ("binary".into(),Value::Bytes(vec![0,1,254,255])),
+            ("large".into(),Value::UInt(u64::MAX)),
+            ("ref".into(),Value::Ref(Id(u128::MAX))),
+        ]));
+        let encoded=encode_value(&input).unwrap();
+        let decoded=decode_value(&encoded).unwrap();
+        assert_eq!(decoded,input);
+        assert!(decode_value(&json!({"k":"bytes","v":[256]})).is_err());
+    }
+
     #[test]
     fn rejects_unrepresentable_native_values() {
         assert!(encode_value(&Value::Float(f64::NAN)).is_err());
