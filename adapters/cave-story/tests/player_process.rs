@@ -115,8 +115,10 @@ fn actual_original_player_worker_uses_universal_catalog_and_host() {
         adapter.start_context(MODULE_ID,second_context).unwrap()).unwrap();
     recovery.instantiate(second_context,original.clone(),Some(&checkpoint)).unwrap();
     assert_eq!(recovery.snapshot(id).unwrap().state,checkpoint.state);
-    for n in 9..=16 {
-        let output=recovery.step(second_context,tick(n),&[controls(id,false)]).unwrap();
+    // A different world has its own scheduler clock starting from tick 1.
+    // The source-native character must nevertheless continue from tick 9.
+    for host_tick in 1..=8 {
+        let output=recovery.step(second_context,tick(host_tick),&[controls(id,false)]).unwrap();
         assert_eq!(output.emitted_events[0].type_ref,kind("player.frame"));
     }
     let recovered=recovery.snapshot(id).unwrap();
