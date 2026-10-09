@@ -10,6 +10,14 @@ executes the original hitbox membership algorithm on signed native fixed-point
 coordinates, and emits source-typed results. Distinct execution contexts have
 independent instances. No copyrighted game assets are required to run tests.
 
+The independent [native weapon module](src/weapon.rs) calls the original
+Cave Story `Weapon::consume_ammo` and `Weapon::refill_ammo` methods directly.
+It preserves source item identity, snapshot revisions, unknown native metadata,
+and original ammunition semantics (including unlimited ammunition and maximum
+refill), even when instantiated in a different OASIS host. Projectile
+simulation, firing cooldown, sound effects, player inventories, and weapon XP
+are **not** implemented by this initial source-backed item capability.
+
 This **does not** constitute a full Cave Story adapter: its player controller,
 tile/slope collision response, NPC interactions, weapons, camera, original
 rendering pipeline, and playable worlds are not yet wired into OASIS. In
