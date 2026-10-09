@@ -274,6 +274,9 @@ dependencies = [
 [[package]]
 name = "oasis-contracts"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "oasis-runtime"
