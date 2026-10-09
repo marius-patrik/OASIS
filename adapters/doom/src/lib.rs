@@ -282,11 +282,20 @@ mod tests{
             pair(DIV,3<<16,2<<16), // 3.0 / 2.0
             pair(DISTANCE,3<<16,4<<16), // original DOOM approximate
             bbox(&[(10,20),(30,5)]),
+            bbox(&[(10,20),(30,5),(10,20)]),
         ]).unwrap().emitted_events;
         assert_eq!(value(&result[0]),&Value::Int(i64::from(3<<16)));
         assert_eq!(value(&result[1]),&Value::Int(i64::from(3<<15)));
         assert_eq!(value(&result[2]),&Value::Int(i64::from(11<<15)));
         assert_eq!(value(&result[3]),&Value::Map(BTreeMap::from([
+            // Upstream DOOM's if/else-if bounding-box update intentionally
+            // leaves TOP inverted after the first two insertions.
+            ("top".into(),Value::Int(i64::from(i32::MIN))),
+            ("bottom".into(),Value::Int(5)),
+            ("left".into(),Value::Int(10)),
+            ("right".into(),Value::Int(30)),
+        ])));
+        assert_eq!(value(&result[4]),&Value::Map(BTreeMap::from([
             ("top".into(),Value::Int(20)),
             ("bottom".into(),Value::Int(5)),
             ("left".into(),Value::Int(10)),
