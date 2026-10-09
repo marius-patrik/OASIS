@@ -6,6 +6,8 @@
 //! hitbox point tests are implemented; OASIS supplies identity and transport.
 //! No other game is referenced or imported.
 
+pub mod weapon;
+
 use std::collections::BTreeMap;
 
 use doukutsu_rs::game::physics::HitExtents;
