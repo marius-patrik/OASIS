@@ -150,7 +150,11 @@ impl DurableWorldStore for PostgresStore {
                     namespace:c.get(0), name:c.get(1),
                     version:u32::try_from(type_version)?,
                 },
-                data:codec::json_component(&data)?,
+                // Initial component records and native snapshots use the
+                // *same* lossless tagged value representation. Decoding raw
+                // JSON here would turn origin-engine binary buffers into
+                // generic sequences and lose unsigned/ref type identity.
+                data:codec::decode_value(&data)?,
             });
         }
         Ok(Some(EntityView {
