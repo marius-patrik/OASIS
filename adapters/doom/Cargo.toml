@@ -1,0 +1,16 @@
+[package]
+name = "oasis-adapter-doom"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "GPL-2.0-only"
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+oasis-contracts = { path = "../../contracts" }
+room = { path = "../../engines/doom/room" }
+
+[dev-dependencies]
+oasis-runtime = { path = "../../runtime" }
