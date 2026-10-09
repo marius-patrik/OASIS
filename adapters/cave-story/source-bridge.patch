@@ -13,7 +13,7 @@ diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/oasis_bridge.rs
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,172 @@
 +//! OASIS source-native headless entrypoint, applied as an exact patch to the
 +//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
 +use std::cell::RefCell;
