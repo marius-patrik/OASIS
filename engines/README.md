@@ -17,4 +17,11 @@ Clone with `git clone --recurse-submodules` or initialize with `git submodule up
 - The universal runtime must never import or name either game. Only the final integration verification uses both adapters in one process/world.
 - The upstream code and game assets have separate licensing obligations. Do not redistribute copyrighted game data without appropriate rights. Linking to GPL code may affect licensing of distributed combined works.
 
-The game ports are not yet runnable as OASIS modules; pinning them is only the source-integration prerequisite.
+The pinned sources now support individually runnable **partial** source-backed
+OASIS native modules under [`adapters/cave-story`](../adapters/cave-story/) and
+[`adapters/doom`](../adapters/doom/). The *complete original game
+engines* are still not runnable as OASIS worlds. The Cave Story adapter
+currently covers hitbox membership, native ammo operations and stage
+PXM/attribute loading; the DOOM adapter covers fixed-point and bbox
+primitives. Original controllers, world simulation, renderers and native
+gameplay loops remain unfinished.
