@@ -62,6 +62,11 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 - [x] Load native Cave Story PXM stage data and resolve original tile attributes using upstream `Map::load_pxm` and `Map::get_attribute`, with asset-free source format fixtures and native snapshots.
 - [x] Expose the actual original `Player::tick` and `PhysicalEntity::tick_map_collisions` through an exact pinned upstream source patch, using native headless game context, controller input and generated PXM stage fixtures; verify movement and grounding in source CI.
 - [x] Host original headless player tick + PXM stage collision inside a non-Send source-game subprocess, discoverable as a standard universal GameAdapter, with movement state checkpoints, fresh-worker restart and source CI. This is not a full scene checkpoint.
+- [x] Invoke original Cave Story inventory, weapon tick, source-native
+  projectile spawning/movement and stage collision inside the original
+  player worker; persist source ammunition/XP/level with native tests.
+  Projectile instances and internal weapon cooldown state are not yet
+  included in checkpoints.
 - [ ] Implement **complete native scene and player checkpointing**, including all source physics timers, inventory, NPCs, scripts, original RNG and render state, and test gameplay-equivalent cold recovery.
 - [ ] Extract/host Cave Story simulation, controller, physics/geometry, item behaviors, camera/render pipeline through the **same** contract.
 - [ ] Keep its original 2D frame and native mechanics; do not change DOOM adapter or platform for its private types.
