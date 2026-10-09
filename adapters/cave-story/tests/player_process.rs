@@ -311,7 +311,7 @@ fn original_projectile_fires_inside_native_game_worker_and_consumes_source_ammo(
     let output=host.step(ctx,tick(1),&[input]).unwrap();
     let count=output.emitted_events.iter().find(|e|e.type_ref==kind("player.native-projectiles"))
         .expect("upstream source projectile event");
-    assert!(matches!(count.data,Value::UInt(n) if n>0),
+    assert!(matches!(&count.data,Value::UInt(n) if *n>0),
         "real upstream engine must spawn its own native projectile");
 
     let native=host.snapshot(id).unwrap();
