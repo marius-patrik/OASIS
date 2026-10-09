@@ -79,3 +79,7 @@ jobs:
         run: cargo test --manifest-path adapters/doom/Cargo.toml --lib
       - name: Execute source-native game modules inside isolated workers
         run: cargo test --manifest-path adapters/${{ matrix.name }}/Cargo.toml --test process
+      - name: Exercise original Cave Story player movement through OASIS process host
+        if: matrix.name == 'cave-story'
+        run: cargo test --manifest-path adapters/cave-story/Cargo.toml --test player_process
+
