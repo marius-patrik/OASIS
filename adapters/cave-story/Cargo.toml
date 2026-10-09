@@ -11,3 +11,6 @@ resolver = "2"
 [dependencies]
 oasis-contracts = { path = "../../contracts" }
 doukutsu-rs = { path = "../../engines/cave-story", default-features = false }
+
+[dev-dependencies]
+oasis-runtime = { path = "../../runtime" }
