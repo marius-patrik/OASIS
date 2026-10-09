@@ -1,6 +1,6 @@
 # OASIS — Implementation Plan v0.1
 
-This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that either original game is complete. Partial original Cave Story hitbox and weapon operations now execute through independent OASIS adapters.
+This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that either original game is complete. Original Cave Story hitbox, weapon-ammunition and PXM stage operations, plus original DOOM numeric/geometry operations, now execute through independently tested OASIS adapters.
 
 ## Gate 0: Contract and candidate feasibility (parallel)
 
@@ -40,6 +40,7 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 ## Gate 3A: DOOM adapter — independent lane
 
+- [x] Run original `room` fixed-point arithmetic, approximate-distance and bounding-box routines as an independently registered GPL-scoped native module with source-backed CI tests.
 - [ ] Extract/host original DOOM controller, simulation, weapon capability, world geometry and native render output via the universal contract.
 - [ ] Isolate original static globals or host separate contexts; retain native behavior.
 - [ ] Register all definitions, native bindings and game-world records through the universal API.
@@ -51,6 +52,7 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 - [x] Run upstream `HitExtents` collision-membership methods through an independently registered OASIS native module, with snapshot/restore and source-game CI.
 - [x] Execute upstream `Weapon::consume_ammo` and `Weapon::refill_ammo` as a separate portable item module, with native ammunition semantics and state/metadata preservation.
+- [x] Load native Cave Story PXM stage data and resolve original tile attributes using upstream `Map::load_pxm` and `Map::get_attribute`, with asset-free source format fixtures and native snapshots.
 - [ ] Extract/host Cave Story simulation, controller, physics/geometry, item behaviors, camera/render pipeline through the **same** contract.
 - [ ] Keep its original 2D frame and native mechanics; do not change DOOM adapter or platform for its private types.
 - [ ] Register records, assets and native bindings through the universal API.
@@ -85,7 +87,7 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
   and restart recovery on failed destination instantiation. Persistent-lease
   gating is enforced at tick boundaries. Cross-process travel, cancellation
   of in-flight game logic, and durable-effect fencing remain open.
-- Both original Rust sources are pinned as independent Git submodules. Cave Story has independently tested native hitbox and weapon-ammunition OASIS modules; its full game, character controller, physics, projectile effects and renderer are not integrated. The DOOM OASIS adapter remains entirely unimplemented.
+- Both original Rust engines remain pinned Git submodules. Cave Story now has native hitbox, ammunition, and PXM stage modules, and DOOM has a GPL-scoped original fixed-math/bbox module. The source-backed CI builds and executes each adapter independently. **Neither game has a complete original controller, scene/tick, full physics, or native renderer wired into OASIS.** DOOM gameplay globals require isolation before full-world execution.
 - The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
 - Final black-box interoperability has **not** been attempted; cross-game code must remain absent.
 
