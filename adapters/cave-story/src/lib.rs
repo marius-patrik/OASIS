@@ -7,6 +7,7 @@
 //! No other game is referenced or imported.
 
 pub mod weapon;
+pub mod stage;
 
 use std::collections::BTreeMap;
 
