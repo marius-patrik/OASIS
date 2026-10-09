@@ -328,7 +328,7 @@ pub trait NativeModule: Send {
     fn remove(&mut self, handle: NativeHandle) -> ContractResult<()>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CameraState {
     pub owner_entity_id: Id,
     pub frame_id: Id,
@@ -339,7 +339,7 @@ pub struct CameraState {
     pub data: Option<TypedValue>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RenderFrame {
     pub world_instance_id: Id,
     pub frame_number: u64,
@@ -350,7 +350,7 @@ pub struct RenderFrame {
     pub output_time_nanos: u128,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RenderContribution {
     Geometry { assets: Vec<Id>, transforms: Vec<Transform> },
     SharedSurface {
