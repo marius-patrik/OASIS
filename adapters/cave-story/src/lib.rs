@@ -241,7 +241,6 @@ mod tests {
     use super::*;
     use oasis_contracts::{
         FrameMap, GeometryRequest, GeometryResult, SpatialHit, SpatialQuery,
-        Vec3,
     };
 
     struct EmptyWorld;
