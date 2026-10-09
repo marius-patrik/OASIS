@@ -31,3 +31,18 @@ dependency graph.
 git submodule update --init --recursive
 cargo test --manifest-path adapters/cave-story/Cargo.toml --lib
 ```
+
+## Source-native stage maps
+
+The [stage module](src/stage.rs) uses the pinned original
+`doukutsu_rs::game::map::Map::load_pxm` PXM reader and
+`Map::get_attribute` tile-attribute resolution. It accepts original PXM and
+256-byte source-native attribute data, retains arbitrary additional native
+state, and runs independently through the universal OASIS module registry,
+`Host`, and snapshot/restore lifecycle. Asset-free tests generate valid PXM
+source-format fixtures and exercise the original loader in CI.
+
+It does **not** infer physics from arbitrary tile codes, replace Cave Story's
+slope/tile collision response, provide a renderer or full stage lifecycle, or
+make the game playable. Those require integrating the game's actual scene,
+player, physics, NPC, and rendering contexts.
