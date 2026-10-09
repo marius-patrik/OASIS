@@ -30,6 +30,13 @@ authoritative interaction contracts through which they can coexist.
   player movement, complete collision response, projectiles, NPCs,
   camera/rendering, and DOOM's gameplay globals/thinker loop, native
   controller, renderer and WAD loading remain unintegrated.
+- [Game-independent native subprocess boundary](native-process/) runs each
+  source engine in an isolated address space, so DOOM's mutable process-global
+  state and Cave Story's non-`Send` scene resources need not be moved into the
+  server's Rust memory. The versioned typed worker protocol forwards every
+  `WorldPort` callback to the trusted host and supports original native state
+  lifecycle/snapshots. Real child-process tests run in CI. **The complete
+  original DOOM/Cave Story loops have not yet been connected to workers.**
 - [Adapter catalog](runtime/src/catalog.rs) for transactional, collision-free
   native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
@@ -72,6 +79,7 @@ authoritative interaction contracts through which they can coexist.
 
 ```sh
 cargo test --workspace --all-targets
+cargo test -p oasis-native-process --test process --locked
 cargo clippy --workspace --all-targets -- -D warnings
 python3 tests/verify_structure.py
 git submodule update --init --recursive
