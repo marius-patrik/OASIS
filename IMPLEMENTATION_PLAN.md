@@ -26,7 +26,11 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 ## Gate 2: Universal runtime and synthetic adapters
 
 - [x] Compile and test `contracts` in CI.
-- [ ] Stabilize an out-of-process native ABI/IDL for isolated engines.
+- [x] Implement versioned subprocess control ABI for isolated original engines
+  (source identity, native snapshots, native steps, and all five synchronous
+  WorldPort callbacks), with a real executable worker conformance test.
+- [ ] Complete production worker hardening: IPC timeout/cancellation, OS
+  sandboxing, large native render surfaces and module artifact verification.
 - [x] Build in-process `WorldPort` dispatcher, native execution contexts, native handle registry, module clocks, and snapshots/restore.
 - [x] Provide a basic geometry/spatial-query and typed interaction/authority dispatcher.
 - [ ] Complete native-world geometry providers, backend-specific physics, and remote transaction fencing.
@@ -82,7 +86,10 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 
 ## Verified implementation baseline (2026-10-09)
 
-- Universal Rust workspace, adapter catalog, native-module runtime, authority fencing, clock scheduling, render composition planning, and synthetic conformance tests compile and pass GitHub Actions.
+- Universal Rust workspace, adapter catalog, native-module runtime, authority
+  fencing, scheduling, render planning, and an **engine-independent real
+  subprocess protocol** for non-Send or process-global native engines compile
+  and pass CI. Source-specific full gameplay workers are not connected yet.
 - PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; cold-start state restoration is now available through `oasis-service`, and expired leases can be reclaimed by a restarted native context; in-process live travel is now SQL-coordinated, with native-context quarantine
   and restart recovery on failed destination instantiation. Persistent-lease
   gating is enforced at tick boundaries. Cross-process travel, cancellation
