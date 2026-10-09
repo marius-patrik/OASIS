@@ -279,6 +279,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oasis-native-process"
+version = "0.1.0"
+dependencies = [
+ "oasis-contracts",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "oasis-runtime"
 version = "0.1.0"
 dependencies = [
