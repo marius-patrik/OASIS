@@ -8,6 +8,7 @@
 
 pub mod weapon;
 pub mod stage;
+mod player;
 
 use std::collections::BTreeMap;
 
