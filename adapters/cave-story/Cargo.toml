@@ -1,0 +1,16 @@
+[package]
+name = "oasis-adapter-cave-story"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[workspace]
+resolver = "2"
+
+[dependencies]
+oasis-contracts = { path = "../../contracts" }
+doukutsu-rs = { path = "../../engines/cave-story", default-features = false }
+
+[dev-dependencies]
+oasis-runtime = { path = "../../runtime" }
