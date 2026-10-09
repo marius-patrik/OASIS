@@ -13,7 +13,7 @@ diff --git a/src/oasis_bridge.rs b/src/oasis_bridge.rs
 new file mode 100644
 --- /dev/null
 +++ b/src/oasis_bridge.rs
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,201 @@
 +//! OASIS source-native headless entrypoint, applied as an exact patch to the
 +//! pinned doukutsu-rs implementation. All physics remains in Player::tick.
 +use std::cell::RefCell;
@@ -30,7 +30,10 @@ new file mode 100644
 +use crate::common::Color;
 +use crate::framework::error::GameError;
 +use crate::game::npc::list::NPCList;
-+use crate::game::player::Player;
++use crate::game::player::{Player,TargetPlayer};
++use crate::game::inventory::Inventory;
++use crate::game::weapon::WeaponType;
++use crate::game::weapon::bullet::BulletManager;
 +use crate::game::shared_game_state::SharedGameState;
 +use crate::input::player_controller::PlayerController;
 +
@@ -110,6 +113,9 @@ new file mode 100644
 +    _filesystem:FilesystemContainer,
 +    npc_list:NPCList,
 +    stage:Option<Stage>,
++    inventory:Inventory,
++    bullets:BulletManager,
++    second_player:Player,
 +    input:InputLatch,
 +}
 +impl Simulation {
@@ -125,9 +131,21 @@ new file mode 100644
 +        let input=InputLatch::default();
 +        player.controller=Box::new(input.clone());
 +        let (npc_list,_token)=NPCList::new();
-+        Ok(Self{player,state,_context:context,_filesystem:filesystem,npc_list,stage:None,input})
++        let second_player=Player::new(&mut state,&mut context);
++        Ok(Self{player,state,_context:context,_filesystem:filesystem,
++            npc_list,stage:None,inventory:Inventory::new(),
++            bullets:BulletManager::new(),second_player,input})
 +    }
 +    pub fn controls(&mut self,buttons:Buttons){*self.input.current.borrow_mut()=buttons;}
++    /// Equip a weapon using the original Cave Story inventory and enum.
++    pub fn equip_weapon(&mut self,wtype:WeaponType,ammo:u16){
++        self.inventory.add_weapon(wtype,ammo);
++        self.player.current_weapon=wtype as u8;
++    }
++    pub fn active_bullets(&self)->usize{self.bullets.bullets.len()}
++    pub fn current_weapon_ammo(&self)->Option<(u16,u16)>{
++        self.inventory.get_current_weapon().map(|w|(w.ammo,w.max_ammo))
++    }
 +    pub fn frame(&self)->PlayerFrame {
 +        PlayerFrame {
 +            x:self.player.x,y:self.player.y,
@@ -182,6 +200,17 @@ new file mode 100644
 +        if let Some(stage)=self.stage.as_mut(){
 +            self.player.tick_map_collisions(&mut self.state,&self.npc_list,stage);
 +        }
++        // Continue the original GameScene::tick_world weapon/bullet order.
++        // Original gameplay code determines ammo, refire timing, projectile
++        // spawning, native projectile movement and map collision.
++        self.inventory.tick_weapons(&mut self.state,&mut self.player,
++            TargetPlayer::Player1,&mut self.bullets);
++        self.bullets.tick_bullets(&mut self.state,
++            [&self.player,&self.second_player],&self.npc_list);
++        if let Some(stage)=self.stage.as_mut(){
++            self.bullets.tick_map_collisions(&mut self.state,&self.npc_list,stage);
++        }
++        self.state.tick_carets();
 +        self.player.controller.update_trigger();
 +        Ok(self.frame())
 +    }
