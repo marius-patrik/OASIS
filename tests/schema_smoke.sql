@@ -60,7 +60,7 @@ INSERT INTO components (id, entity_id, type_id, data)
 VALUES ('00000000-0000-0000-0000-000000000010',
         '00000000-0000-0000-0000-000000000007',
         '00000000-0000-0000-0000-000000000001',
-        '{"gameSpecific": [1,2,3], "arbitrary": {"nesting": 5}}');
+        '{"k":"map","v":{"gameSpecific":{"k":"sequence","v":[{"k":"int","v":1},{"k":"int","v":2},{"k":"int","v":3}]},"arbitrary":{"k":"map","v":{"nesting":{"k":"int","v":5}}},"bytecode":{"k":"bytes","v":[0,1,254,255]},"maxUnsigned":{"k":"uint","v":18446744073709551615},"nativeRef":{"k":"ref","v":"340282366920938463463374607431768211455"}}}');
 
 INSERT INTO games (id, name, default_engine_id)
 VALUES ('00000000-0000-0000-0000-000000000011', 'Fixture',
