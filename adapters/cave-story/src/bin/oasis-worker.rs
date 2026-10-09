@@ -4,12 +4,18 @@ use oasis_adapter_cave_story::{
     CaveStoryAdapter,stage::CaveStoryStageAdapter,weapon::CaveStoryWeaponAdapter,
 };
 use oasis_contracts::{GameAdapter,Id};
-use oasis_native_process::serve_native_boxed;
+use oasis_native_process::{serve_native_boxed,serve_worker};
+use oasis_adapter_cave_story::gameplay::OriginalPlayer;
 
 fn main(){
     let args=std::env::args().collect::<Vec<_>>();
-    assert_eq!(args.len(),3,"usage: oasis-worker <hitbox|weapon|stage> <context-u128>");
+    assert_eq!(args.len(),3,"usage: oasis-worker <hitbox|weapon|stage|player> <context-u128>");
     let context=Id(args[2].parse().expect("invalid worker context"));
+    if args[1]=="player" {
+        serve_worker(OriginalPlayer::new(context))
+            .expect("original headless player worker failed");
+        return;
+    }
     let (adapter,module): (Box<dyn GameAdapter>,Id)=match args[1].as_str(){
         "hitbox"=>(Box::new(CaveStoryAdapter),oasis_adapter_cave_story::MODULE_ID),
         "weapon"=>(Box::new(CaveStoryWeaponAdapter),
