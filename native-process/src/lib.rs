@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::io::{self, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::Mutex;
 
 use oasis_contracts::{
     ClockStep, ContractError, ContractResult, EntityView, FrameMap, GeometryRequest,
@@ -212,10 +213,13 @@ pub fn serve_worker<M:LocalNativeModule>(mut module:M)->io::Result<()> {
 /// Platform-side proxy. Rust's `Child` and owned pipes are `Send`, although
 /// the original game state in the worker need not be. One worker per isolated
 /// engine context; no in-process game-global state is shared across contexts.
-pub struct ProcessModule {
-    child: Child,
+struct WorkerIo {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+}
+pub struct ProcessModule {
+    child: Child,
+    io: Mutex<WorkerIo>,
     descriptor: ModuleDescriptor,
     context_id: Id,
 }
@@ -229,33 +233,32 @@ impl ProcessModule {
             .spawn().map_err(internal)?;
         let stdin=child.stdin.take().ok_or_else(||internal("stdin unavailable"))?;
         let stdout=child.stdout.take().ok_or_else(||internal("stdout unavailable"))?;
-        let mut proxy=Self{
-            child,stdin,stdout:BufReader::new(stdout),
-            descriptor:ModuleDescriptor{
-                engine_id:Id(0),module_id:Id(0),
-                contract_major:0,contract_minor:0,
-                exported_interfaces:vec![],required_interfaces:vec![],
-            },
-            context_id,
-        };
-        match read_frame(&mut proxy.stdout).map_err(internal)? {
+        let mut stdout=BufReader::new(stdout);
+        let descriptor=match read_frame(&mut stdout).map_err(internal)? {
             Frame::Ready{protocol,descriptor}
                 if protocol==PROTOCOL
                     && descriptor.module_id==module_id
                     && descriptor.contract_major==0
-                    && descriptor.contract_minor>=1=>{
-                proxy.descriptor=descriptor;
-                Ok(proxy)
+                    && descriptor.contract_minor>=1=>descriptor,
+            _=>{
+                let _=child.kill();
+                let _=child.wait();
+                return Err(internal("untrusted or incompatible native worker handshake"));
             },
-            _=>Err(internal("untrusted or incompatible native worker handshake")),
-        }
+        };
+        Ok(Self{
+            child,
+            io:Mutex::new(WorkerIo{stdin,stdout}),
+            descriptor,context_id,
+        })
     }
 
-    fn exchange(&mut self,command:Call,mut world:Option<&mut dyn WorldPort>)
+    fn exchange(&self,command:Call,mut world:Option<&mut dyn WorldPort>)
         ->ContractResult<Reply>{
-        write_frame(&mut self.stdin,&Frame::Call(command)).map_err(internal)?;
+        let mut io=self.io.lock().map_err(internal)?;
+        write_frame(&mut io.stdin,&Frame::Call(command)).map_err(internal)?;
         loop {
-            match read_frame(&mut self.stdout).map_err(internal)? {
+            match read_frame(&mut io.stdout).map_err(internal)? {
                 Frame::Return(result)=>return result,
                 Frame::WorldCall(request)=>{
                     let handler=world.as_deref_mut()
@@ -270,7 +273,7 @@ impl ProcessModule {
                         WorldCall::Submit(request)=>handler.submit_interaction(request)
                             .map(|()|WorldReply::Done),
                     };
-                    write_frame(&mut self.stdin,&Frame::WorldReturn(response))
+                    write_frame(&mut io.stdin,&Frame::WorldReturn(response))
                         .map_err(internal)?;
                 },
                 _=>return Err(internal("unexpected frame from game process")),
@@ -300,11 +303,10 @@ impl NativeModule for ProcessModule {
         }
     }
     fn snapshot(&self,handle:NativeHandle)->ContractResult<Snapshot>{
-        // NativeModule::snapshot is an immutable Rust method. Worker IPC
-        // needs mutable pipe access; the host serializes requests, so this
-        // uses interior mutability through RefCell at a higher layer.
-        let _=handle;
-        Err(internal("snapshot must be delegated through mutable worker handle"))
+        match self.exchange(Call::Snapshot(handle),None)?{
+            Reply::Snapshot(snapshot)=>Ok(snapshot),
+            _=>Err(internal("wrong native checkpoint reply")),
+        }
     }
     fn restore(&mut self,handle:NativeHandle,snapshot:&Snapshot)->ContractResult<()>{
         match self.exchange(Call::Restore{
