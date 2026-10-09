@@ -20,6 +20,53 @@ mod tests {
             "upstream original movement should accelerate the player");
     }
 
+    fn flat_native_stage() -> (Vec<u8>,Vec<u8>) {
+        // A 12x12 Cave Story PXM v0x10 world with original solid attribute
+        // 0x41 across the entire seventh row. No proprietary stage data.
+        const WIDTH:usize=12;
+        const HEIGHT:usize=12;
+        let mut tiles=vec![0u8;WIDTH*HEIGHT];
+        for x in 0..WIDTH {tiles[7*WIDTH+x]=1;}
+        let mut pxm=b"PXM".to_vec();
+        pxm.push(0x10);
+        pxm.extend_from_slice(&(WIDTH as u16).to_le_bytes());
+        pxm.extend_from_slice(&(HEIGHT as u16).to_le_bytes());
+        pxm.extend_from_slice(&tiles);
+        let mut attrs=vec![0u8;256];
+        attrs[1]=0x41;
+        (pxm,attrs)
+    }
+
+    #[test]
+    fn original_tile_collision_stops_native_player_at_solid_ground() {
+        let mut simulation=Simulation::new().expect("native game initialization");
+        let (pxm,attrs)=flat_native_stage();
+        simulation.load_stage(&pxm,&attrs).expect("upstream PXM map loader");
+        simulation.player.x=6*8192; // center of the generated native map
+        simulation.player.y=2*8192;
+        let mut grounded=false;
+        for _ in 0..160 {
+            let frame=simulation.tick().expect("actual native movement and collision tick");
+            if frame.collision_flags & 0x8 != 0 {
+                grounded=true;
+                break;
+            }
+        }
+        assert!(grounded,
+            "the original PhysicalEntity::tick_map_collisions must ground the player");
+    }
+
+    #[test]
+    fn source_stage_input_validation_precedes_native_physics_allocation() {
+        let mut simulation=Simulation::new().expect("native game initialization");
+        let (mut pxm,attributes)=flat_native_stage();
+        pxm[4]=255;
+        pxm[5]=255;
+        assert!(simulation.load_stage(&pxm,&attributes).is_err());
+        assert!(simulation.tick().is_ok(),
+            "invalid source stage must not destroy independent player simulation");
+    }
+
     #[test]
     fn native_headless_reverse_direction_exercises_original_player_control() {
         let mut simulation=Simulation::new().expect("original game init");
