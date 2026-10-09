@@ -26,29 +26,33 @@ authoritative interaction contracts through which they can coexist.
   `room` 16.16 fixed-point operations, approximate distance, and bbox
   routines (including exact upstream edge cases). Kept in an independent
   GPL-scoped adapter rather than linking GPL game code into the core.
-- **Neither original game is yet playable through OASIS.** Cave Story
-  player movement, complete collision response, projectiles, NPCs,
-  camera/rendering, and DOOM's gameplay globals/thinker loop, native
-  controller, renderer and WAD loading remain unintegrated.
-- [Source-native Cave Story player worker](adapters/cave-story/src/gameplay.rs)
-  now runs the original pinned player controller, movement and PXM-stage tile
-  collision in a non-`Send` isolated child, exposed through the SAME generic
-  OASIS GameAdapter, NativeModule and Host interfaces. Movement checkpoints
-  restart across OS processes; full original scene-state checkpointing,
-  NPC/projectile simulation and rendering are still unimplemented.
+- [Source-native Cave Story gameplay worker](adapters/cave-story/src/gameplay.rs)
+  executes original pinned player control, movement, PXM-stage tile collision,
+  inventory/weapon firing, original projectile movement and projectile–tile
+  collision inside a non-`Send` child process. It is exposed through the
+  **same universal GameAdapter, NativeModule and Host interfaces**. The
+  authoritative world runner can tick it; tests verify native player input,
+  bullets, source ammunition and movement checkpoint recovery.
+- **Neither original game is yet fully playable through OASIS.** Cave Story
+  still needs the complete source scene lifecycle, NPC AI and combat,
+  game scripts, native camera/rendering and **lossless scene checkpointing**
+  (active bullets and weapon cooldowns are not fully saved). DOOM still
+  needs its full thinker loop, controller, WAD data and native renderer.
 - [Original game worker executables](adapters/) run the actual pinned
   Cave Story hitbox, weapon and stage functions, and DOOM source-native
   physics/geometry routines, in **separate OS processes** using the universal
   process ABI. Dedicated source CI verifies real process execution and native
-  state/restart behavior for both games. Complete native gameplay/rendering
-  entrypoints remain unfinished.
+  state/restart behavior for both games. The Cave Story player now also runs
+  real source movement, tile collision, firing and projectiles; both full
+  game renderers and complete source game scene lifecycles remain open.
 - [Game-independent native subprocess boundary](native-process/) runs each
   source engine in an isolated address space, so DOOM's mutable process-global
   state and Cave Story's non-`Send` scene resources need not be moved into the
   server's Rust memory. The versioned typed worker protocol forwards every
   `WorldPort` callback to the trusted host and supports original native state
-  lifecycle/snapshots. Real child-process tests run in CI. **The complete
-  original DOOM/Cave Story loops have not yet been connected to workers.**
+  lifecycle/snapshots. Real child-process tests run in CI. Cave Story has
+  a working **partial** original-game tick; DOOM's full game loop remains
+  unconnected and neither is yet a full original-game runtime.
 - [Adapter catalog](runtime/src/catalog.rs) for transactional, collision-free
   native module registration and independently activated execution contexts.
 - [Universal world coordinator](runtime/src/universe.rs) for authenticated player
@@ -95,7 +99,11 @@ cargo test -p oasis-native-process --test process --locked
 cargo clippy --workspace --all-targets -- -D warnings
 python3 tests/verify_structure.py
 git submodule update --init --recursive
+# Only once per fresh checkout; native CI applies the reviewed pinned-source patch:
+git -C engines/cave-story apply --check ../../adapters/cave-story/source-bridge.patch
+git -C engines/cave-story apply ../../adapters/cave-story/source-bridge.patch
 cargo test --manifest-path adapters/cave-story/Cargo.toml --lib
+cargo test --manifest-path adapters/cave-story/Cargo.toml --test player_process
 cargo test --manifest-path adapters/doom/Cargo.toml --lib
 # With a disposable PostgreSQL 16 instance and PG* environment configured:
 psql -v ON_ERROR_STOP=1 -f migrations/0001_core.sql
@@ -110,11 +118,14 @@ DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo te
 DATABASE_URL="host=localhost user=oasis password=oasis_ci dbname=oasis" cargo test -p oasis-service --test postgres
 ```
 
-**Status:** Universal MMO infrastructure and four **source-backed native
-capability modules** (Cave Story hitbox, ammunition and PXM stages; DOOM
-fixed-point physics/geometry) are CI-verified. These are real calls to the
-pinned original engines, not replacement physics or complete integrations.
-The original games are **not yet playable** inside OASIS.
+**Status:** OASIS has a CI-verified persistent runtime, isolated game
+workers and several real original-engine integrations. Cave Story's native
+player movement, tile collisions, weapon firing and projectile movement run
+under the universal authoritative scheduler, alongside its separately tested
+hitbox, ammunition and PXM-stage capabilities. DOOM currently runs only
+original fixed-point/geometry primitives. Neither has complete original
+scene/renderer integration; **the intended playable interconnected MMO is
+not finished**.
 
 Live travel is atomic at the SQL layer and coordinated with in-process
 native transitions; a failed destination is quarantined and recoverable.
