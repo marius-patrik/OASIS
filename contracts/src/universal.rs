@@ -60,6 +60,8 @@ pub enum IsolationMode {
 pub struct ContextManifest {
     pub key: ContextKey,
     pub role: ContextRole,
+    /// Entity binding for character/item contexts; prevents cross-entity restore.
+    pub owner_entity_id: Option<Id>,
     pub isolation: IsolationMode,
     pub artifact_sha256: [u8; 32],
     /// Exact rational native ticks per second (avoid float-rate drift).
@@ -70,6 +72,16 @@ pub struct ContextManifest {
 impl ContextManifest {
     pub fn validate(&self) -> ContractResult<()> {
         self.key.validate()?;
+        let binding_ok = match self.role {
+            ContextRole::World => self.owner_entity_id.is_none(),
+            ContextRole::Character | ContextRole::Item => {
+                self.owner_entity_id.is_some_and(|id| id.0 != 0)
+            }
+            ContextRole::Renderer => self.owner_entity_id.is_none_or(|id| id.0 != 0),
+        };
+        if !binding_ok {
+            return Err(ContractError::InvalidData("invalid context entity binding".into()));
+        }
         if self.artifact_sha256 == [0; 32] {
             return Err(ContractError::InvalidData("missing artifact digest".into()));
         }
@@ -119,6 +131,8 @@ impl LifecyclePhase {
 pub enum CheckpointScope {
     World(Id),
     Entity(Id),
+    /// Renderer/source camera context state that is neither an entity nor world.
+    Context(Id),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -154,8 +168,16 @@ impl NativeCheckpoint {
                 id == manifest.key.world_instance_id
             }
             CheckpointScope::Entity(id) => {
-                if manifest.role == ContextRole::World { return Err(ContractError::InvalidData("entity checkpoint role mismatch".into())); }
-                id.0 != 0
+                if manifest.role != ContextRole::Character && manifest.role != ContextRole::Item {
+                    return Err(ContractError::InvalidData("entity checkpoint role mismatch".into()));
+                }
+                manifest.owner_entity_id == Some(id)
+            }
+            CheckpointScope::Context(id) => {
+                if manifest.role != ContextRole::Renderer {
+                    return Err(ContractError::InvalidData("context checkpoint role mismatch".into()));
+                }
+                id == manifest.key.context_id
             }
         };
         if !expected {
@@ -240,7 +262,13 @@ impl NativeRenderPacket {
         self.context.validate()?;
         if self.frame.width == 0 || self.frame.height == 0
             || self.frame.world_instance_id != self.context.world_instance_id
-            || self.camera.owner_entity_id != self.frame.camera.owner_entity_id {
+            || self.camera.owner_entity_id != self.frame.camera.owner_entity_id
+            || self.camera.frame_id != self.frame.camera.frame_id
+            || self.camera.view_column_major_4x4 != self.frame.camera.view_column_major_4x4
+            || self.camera.projection_column_major_4x4 != self.frame.camera.projection_column_major_4x4
+            || self.camera.data != self.frame.camera.data
+            || self.camera.view_column_major_4x4.iter().any(|x| !x.is_finite())
+            || self.camera.projection_column_major_4x4.iter().any(|x| !x.is_finite()) {
             return Err(ContractError::InvalidData("native render frame/camera mismatch".into()));
         }
         if self.surfaces.is_empty() {
