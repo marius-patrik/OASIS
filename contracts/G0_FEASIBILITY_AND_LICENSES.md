@@ -44,4 +44,6 @@
 | SoundFonts and transitive media | DOOM upstream includes `soundfonts/` plus third-party render/audio crates | Do not presume code license applies to fonts/samples/sounds. Headless test should disable or supply separately verified media; production bundle must carry per-asset notices. |
 | CI output/releases | [native source CI](../.github/workflows/native-engines.yml) checks out recursive upstream submodules | A checkout may include upstream assets. Reject unexpected WAD/resource paths in published artifacts. Add reproducible asset manifest, license allowlist and artifact scan before release. Upstream source checkout is not automatic permission to redistribute. |
 
+Top-level tracked-media guard: [`tests/verify_distribution_assets.py`](../tests/verify_distribution_assets.py) enforces an explicit, hashed [approved media allowlist](../tests/approved_assets.json) in CI. It does not inspect upstream submodule contents or eventual release archives and **cannot** provide distribution authorization by itself.
+
 **No release authorization:** This audit identifies licenses and risks; it does not certify combined GPL compliance or redistribution rights. No proprietary assets added by G0.
