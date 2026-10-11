@@ -203,6 +203,59 @@ pub struct NativeGeometryBatch {
     pub contacts: Vec<NativeContact>,
 }
 
+impl NativeGeometryBatch {
+    /// Reject invalid/mismatched native contact geometry before an origin
+    /// controller consumes it. This does NOT resolve collision for the source.
+    pub fn validate_for(&self, request: &GeometryRequest) -> ContractResult<()> {
+        fn valid_vec(v: crate::Vec3) -> bool {
+            v.x.is_finite() && v.y.is_finite() && v.z.is_finite()
+        }
+        if request.frame_id.0 == 0 || self.frame_id != request.frame_id
+            || !valid_vec(request.center)
+            || !request.radius.is_finite() || request.radius <= 0.0 {
+            return Err(ContractError::InvalidData("invalid native geometry request/frame".into()));
+        }
+        for contact in &self.contacts {
+            if contact.owner_entity_id.is_some_and(|id| id.0 == 0) {
+                return Err(ContractError::InvalidData("zero contact owner".into()));
+            }
+            if let Some(m) = &contact.material {
+                if m.type_ref.namespace.is_empty() || m.type_ref.name.is_empty()
+                    || m.type_ref.version == 0 {
+                    return Err(ContractError::InvalidData("unversioned contact material".into()));
+                }
+            }
+            let good = match &contact.geometry {
+                Geometry::Aabb { frame_id, minimum, maximum } => {
+                    *frame_id == request.frame_id && valid_vec(*minimum) && valid_vec(*maximum)
+                        && minimum.x <= maximum.x && minimum.y <= maximum.y
+                        && minimum.z <= maximum.z
+                }
+                Geometry::Plane { frame_id, normal, distance } => {
+                    *frame_id == request.frame_id && valid_vec(*normal)
+                        && distance.is_finite()
+                        && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 0.0)
+                }
+                Geometry::TriangleMesh { asset_id, transform } => {
+                    asset_id.0 != 0 && transform.frame_id == request.frame_id
+                        && valid_vec(transform.position) && valid_vec(transform.scale)
+                        && transform.scale.x > 0.0 && transform.scale.y > 0.0
+                        && transform.scale.z > 0.0
+                        && transform.rotation_xyzw.iter().all(|v| v.is_finite())
+                }
+                Geometry::Custom(value) => {
+                    !value.type_ref.namespace.is_empty() && !value.type_ref.name.is_empty()
+                        && value.type_ref.version > 0
+                }
+            };
+            if !good {
+                return Err(ContractError::InvalidData("invalid native geometry contact".into()));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PixelFormat { Rgba8, Bgra8 }
 
