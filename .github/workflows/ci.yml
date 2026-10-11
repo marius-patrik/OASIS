@@ -86,3 +86,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify universal implementation boundaries
         run: python3 tests/verify_structure.py
+      - name: Reject unapproved tracked proprietary game/media files
+        run: python3 tests/verify_distribution_assets.py
