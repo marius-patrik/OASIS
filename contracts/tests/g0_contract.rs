@@ -77,6 +77,13 @@ fn checkpoint_envelope_rejects_forged_context_digest_and_incomplete_payload() {
     saved=fixture.checkpoint.clone();
     saved.native_bytes.clear();
     assert!(saved.validate_for(&fixture.manifest).is_err());
+    let mut multi=fixture.manifest.clone();
+    multi.owner_entity_id=None;
+    multi.validate().unwrap();
+    let mut peer=fixture.checkpoint.clone();
+    peer.scope=CheckpointScope::Entity(Id(777));
+    peer.validate_for(&multi).unwrap();
+    // This is envelope-only: host must verify peer ID ↔ native slot ownership.
     saved=fixture.checkpoint.clone();
     saved.scope=CheckpointScope::World(fixture.manifest.key.world_instance_id);
     assert!(saved.validate_for(&fixture.manifest).is_err());
