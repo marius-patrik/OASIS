@@ -98,6 +98,7 @@ cargo test -p oasis-native-process --test process --locked
 cargo test -p oasis-contracts --test g0_contract --locked
 cargo clippy --workspace --all-targets -- -D warnings
 python3 tests/verify_structure.py
+python3 tests/verify_distribution_assets.py
 git submodule update --init --recursive
 # The upstream source bridge is applied only once to a clean pinned checkout:
 git -C engines/cave-story apply --check ../../adapters/cave-story/source-bridge.patch
