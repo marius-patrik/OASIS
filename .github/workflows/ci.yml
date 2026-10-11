@@ -19,6 +19,8 @@ jobs:
           components: clippy
       - name: Compile and test independent runtime and storage codecs
         run: cargo test --workspace --lib --locked
+      - name: Exercise G0 source-neutral contract vector/negative tests
+        run: cargo test -p oasis-contracts --test g0_contract --locked
       - name: Verify isolated native game subprocess and full WorldPort IPC
         run: cargo test -p oasis-native-process --test process --locked
       - name: Clippy
