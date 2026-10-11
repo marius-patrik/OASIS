@@ -60,7 +60,8 @@ pub enum IsolationMode {
 pub struct ContextManifest {
     pub key: ContextKey,
     pub role: ContextRole,
-    /// Entity binding for character/item contexts; prevents cross-entity restore.
+    /// Optional exclusive entity binding. None permits multiple native handles
+    /// in a context; the trusted host must then check handle-to-entity bindings.
     pub owner_entity_id: Option<Id>,
     pub isolation: IsolationMode,
     pub artifact_sha256: [u8; 32],
@@ -75,7 +76,7 @@ impl ContextManifest {
         let binding_ok = match self.role {
             ContextRole::World => self.owner_entity_id.is_none(),
             ContextRole::Character | ContextRole::Item => {
-                self.owner_entity_id.is_some_and(|id| id.0 != 0)
+                self.owner_entity_id.is_none_or(|id| id.0 != 0)
             }
             ContextRole::Renderer => self.owner_entity_id.is_none_or(|id| id.0 != 0),
         };
@@ -171,7 +172,8 @@ impl NativeCheckpoint {
                 if manifest.role != ContextRole::Character && manifest.role != ContextRole::Item {
                     return Err(ContractError::InvalidData("entity checkpoint role mismatch".into()));
                 }
-                manifest.owner_entity_id == Some(id)
+                id.0 != 0
+                    && manifest.owner_entity_id.is_none_or(|bound| bound == id)
             }
             CheckpointScope::Context(id) => {
                 if manifest.role != ContextRole::Renderer {
