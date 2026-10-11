@@ -165,7 +165,7 @@ impl NativeCheckpoint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NativeContact {
     pub geometry: Geometry,
     /// Contact data is origin-defined but type/version qualified.
@@ -174,7 +174,7 @@ pub struct NativeContact {
     pub owner_entity_id: Option<Id>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NativeGeometryBatch {
     pub frame_id: Id,
     pub revision: Revision,
