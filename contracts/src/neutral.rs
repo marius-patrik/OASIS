@@ -31,7 +31,7 @@ fn fixture(dimensions: u8, seed: u128) -> NeutralFixture {
     let digest = [dimensions; 32];
     let (num, den) = if dimensions == 2 { (60, 1) } else { (35, 1) };
     let manifest = ContextManifest {
-        key, role: ContextRole::Character, isolation: IsolationMode::Process,
+        key, role: ContextRole::Character, owner_entity_id:Some(character), isolation: IsolationMode::Process,
         artifact_sha256: digest, ticks_per_second_num: num, ticks_per_second_den: den,
     };
     let native_codec = TypeRef {namespace:"neutral".into(), name:format!("native-{dimensions}d"), version:1};
