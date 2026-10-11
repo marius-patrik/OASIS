@@ -20,6 +20,7 @@ fn independent_source_neutral_2d_and_3d_vectors_validate() {
         sample.tick.validate(sample.manifest.key.context_id).unwrap();
         sample.checkpoint.validate_for(&sample.manifest).unwrap();
         sample.surface.validate().unwrap();
+        sample.geometry_answer.validate_for(&sample.geometry_query).unwrap();
         assert_eq!(sample.geometry_query.frame_id, sample.geometry_answer.frame_id);
         assert_eq!(sample.checkpoint.native_tick, sample.tick.clock.native_tick);
         assert_eq!(sample.interaction.source_entity_id, sample.entity.id);
@@ -35,6 +36,20 @@ fn independent_contexts_and_native_tick_rates_do_not_alias() {
     assert_ne!(a.manifest.ticks_per_second_num, b.manifest.ticks_per_second_num);
     assert!(a.tick.validate(b.manifest.key.context_id).is_err());
     assert!(a.checkpoint.validate_for(&b.manifest).is_err());
+}
+
+#[test]
+fn geometry_frames_and_contacts_must_be_native_well_formed() {
+    let mut sample = plane_2d();
+    sample.geometry_answer.validate_for(&sample.geometry_query).unwrap();
+    sample.geometry_answer.frame_id = Id(999);
+    assert!(sample.geometry_answer.validate_for(&sample.geometry_query).is_err());
+    sample.geometry_answer.frame_id = sample.geometry_query.frame_id;
+    sample.geometry_query.radius = f64::NAN;
+    assert!(sample.geometry_answer.validate_for(&sample.geometry_query).is_err());
+    sample.geometry_query.radius = 3.0;
+    sample.geometry_answer.contacts[0].owner_entity_id = Some(Id(0));
+    assert!(sample.geometry_answer.validate_for(&sample.geometry_query).is_err());
 }
 
 #[test]
