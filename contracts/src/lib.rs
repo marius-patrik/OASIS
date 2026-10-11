@@ -403,3 +403,6 @@ mod tests {
 }
 /// Gate G0 production full-game role contracts. Partial v0 helpers are not conformance.
 pub mod universal;
+
+/// Engine-agnostic 2D/3D test vectors consumed independently by every lane.
+pub mod neutral;
