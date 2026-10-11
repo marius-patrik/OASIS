@@ -57,6 +57,9 @@ fn checkpoint_envelope_rejects_forged_context_digest_and_incomplete_payload() {
     saved.artifact_sha256=[9;32];
     assert!(saved.validate_for(&fixture.manifest).is_err());
     saved=fixture.checkpoint.clone();
+    saved.scope=CheckpointScope::Entity(Id(8888));
+    assert!(saved.validate_for(&fixture.manifest).is_err());
+    saved=fixture.checkpoint.clone();
     saved.native_bytes.clear();
     assert!(saved.validate_for(&fixture.manifest).is_err());
     saved=fixture.checkpoint.clone();
@@ -169,6 +172,8 @@ fn role_and_worker_identity_must_be_explicit() {
     assert!(source.validate().is_err());
     source.key.context_id=Id(112);
     source.role=ContextRole::World;
+    assert!(source.validate().is_err());
+    source.owner_entity_id=None;
     assert!(source.validate().is_ok());
     // The test never treats Process isolation as a security sandbox.
 }
