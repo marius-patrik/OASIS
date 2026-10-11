@@ -6,6 +6,8 @@ on:
     paths:
       - .gitmodules
       - Cargo.toml
+      - contracts/**
+      - native-process/**
       - engines/**
       - adapters/cave-story/**
       - adapters/doom/**
