@@ -1,6 +1,6 @@
 # OASIS — Technical Design Specification
 
-**Revision:** 0.1 (2026-10-08)  
+**Revision:** 0.2 (G0 published 2026-10-11; full-game integration pending)  
 **Authority:** [`PRD.md`](PRD.md) defines the product. This document specifies the first implementation.  
 **Status:** Design baseline and code skeleton; not a completed game platform.
 
@@ -116,7 +116,7 @@ A cross-world transfer is a **state-machine command**: quiesce origin → snapsh
 
 ## 4. Universal Rust interface v0.1
 
-The reference crate [`contracts/src/lib.rs`](contracts/src/lib.rs) defines:
+The [existing partial-module primitives](contracts/src/lib.rs) define:
 
 | Primitive / trait | Purpose |
 |---|---|
@@ -130,7 +130,7 @@ The reference crate [`contracts/src/lib.rs`](contracts/src/lib.rs) defines:
 | `ClockStep`, `InputIntent` | Native cadence and platform-routed input |
 | `AuthorityStamp`, `InteractionRequest/Result` | Typed cross-owner effects with fencing and acknowledgements |
 
-The crate uses only `std` types, exposing a minimal source-level shape. It does not yet prescribe a transport serialization/IDL, ABI stable plugin boundary, or GPU handle format. These are separate implementation decisions. The reference source is intended to be compiled and evolved, but it has **not** been build-tested in this environment.
+The library's v0 primitive types and helper adapters remain source-level pieces. Full-game conformance now has an explicit **major-v1** source-neutral contract in [contracts/src/universal.rs](contracts/src/universal.rs); do not classify old module descriptors as conformant. The versioned worker transport, ABI and compositor must still be implemented and tested. A process is not a sandbox. The reference source is intended to be compiled and evolved, but it has **not** been build-tested in this environment.
 
 ### 4.1 Native ownership and effects
 
@@ -152,6 +152,13 @@ The crate uses only `std` types, exposing a minimal source-level shape. It does 
 An engine can submit **native geometry**, a **color/depth surface**, or **overlay** output using one render-contribution contract. Each contribution carries frame ID, camera reference, and synchronization metadata. The compositor decides depth ordering and camera transforms; it does not reimplement mesh shading, animation, or the source physics.
 
 The concrete GPU backend is deliberately postponed; rendering across different graphics APIs may require a copy path. Claims of zero-copy, identical lighting, or universal render compatibility must be measured, not presumed.
+
+
+### 4.3 G0 full-game role contract v1 (2026-10-11)
+
+The normative published [G0 specification](contracts/G0_SPEC.md) and [requirements matrix](contracts/G0_REQUIREMENTS_MATRIX.md) supersede any suggestion that existing module-level helpers satisfy full-game requirements. V1 adds the independent `NativeContext`, `WorldSimulation`, `CharacterController`, `ItemCapability`, `NativeSceneRenderer` and `AuthorizedEffectReceiver` source-owned roles, along with validated context/artifact manifests, opaque source checkpoints, true RGBA/BGRA pixel packets, geometry/contact materials, rational clocks and effect receipts. Adapters must explicitly migrate to `contract_major=1`; there is **no production fallback** from v1 to existing v0 partial helper modules.
+
+The [source-neutral 2D/3D vectors](contracts/src/neutral.rs) test representation invariants only. Proven full-game conformance also needs executable independent fixtures, native WAD/stage gameplay, real composited frames, state-equivalent cold restart, multiple isolated contexts, authenticated effects and live users. [Pinned engine feasibility and licensing evidence](contracts/G0_FEASIBILITY_AND_LICENSES.md) identifies currently unresolved blockers. The final source-pair scenario belongs exclusively to #7 after all lanes are independently complete.
 
 ## 5. Platform services and API operations
 
@@ -190,7 +197,7 @@ The final black-box interoperability report is run only after both independent i
 
 - A typed universal protocol does not guarantee that every conceivable original mechanic has a meaningful effect on every possible target. Standard interactions need explicitly defined, versioned semantics; genuinely unsupported interactions must be reported.
 - A Rust rewrite being feature-complete **does not** guarantee headless execution, thread safety, independently instantiable player physics, multiplayer support, or full reusable rendering.
-- The two games remain candidates until independent feasibility spikes measure extraction difficulty and licensing/distribution constraints.
+- The exact pinned sources remain candidates: source entry points have been audited at G0, but source-scene cold replay and actual native pixel proofs are unresolved. See [G0 feasibility](contracts/G0_FEASIBILITY_AND_LICENSES.md).
 - Untrusted native module execution is unsafe in-process. MVP initially assumes audited/trusted modules; distribution and sandboxing of arbitrary third-party code are not solved here.
 - Render composition and physics coupling can be expensive. Performance expectations need baselines from actual engine runs before budgets can be fixed.
 - The initial schema has generic type definitions in SQL, but full registered JSON schema validation and authorization belong in the yet-to-be-implemented Data Service. Do not expose the migration as an unsafe direct-write public API.

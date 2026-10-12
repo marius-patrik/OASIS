@@ -1,6 +1,6 @@
-# OASIS — Implementation Plan v0.1
+# OASIS — Implementation Plan • G0 contract freeze / #37
 
-This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that either original game is complete. Original Cave Story hitbox, weapon-ammunition and PXM stage operations, plus original DOOM numeric/geometry operations, now execute through independently tested OASIS adapters.
+This is an implementation sequence for the PRD and [technical design](TECHNICAL_DESIGN.md), **not** a claim that either original game is complete. Original Cave Story player movement, native collision, inventory/weapon and bullet updates (plus hitbox and PXM) and DOOM numeric/geometry primitives execute through source-backed adapters. Neither game has a complete original scene, lossless checkpoint, or native rendered world through OASIS. See [issue #37](https://github.com/marius-patrik/OASIS/issues/37).
 
 ## Gate 0: Contract and candidate feasibility (parallel)
 
@@ -11,6 +11,18 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 - [ ] Produce feasibility scorecards; substitute another Rust implementation *only* if evidence defeats a candidate.
 
 **Exit:** two viable independent ports or documented replacements, and a frozen minimal contract surface for implementation.
+
+
+### Gate G0 contract-owner deliverables (2026-10-11)
+
+- [x] Publish [source-neutral v1 full-game role contract](contracts/G0_SPEC.md) with explicit world/character/item/effect/render/geometry/opaque checkpoint/clock/lifecycle/process ownership; first version under [PR #38](https://github.com/marius-patrik/OASIS/pull/38). **Published != independently verified.**
+- [x] Publish both [neutral fixture vectors](contracts/src/neutral.rs) and [negative contract-envelope tests](contracts/tests/g0_contract.rs); synthetic *executable* world adapters and source engine full-game conformance remain **open** in lanes B–D.
+- [x] Publish [PRD requirements-to-test inventory](contracts/G0_REQUIREMENTS_MATRIX.md) with full-clause verified/unverified/blocked status and [engine/licensing source audit](contracts/G0_FEASIBILITY_AND_LICENSES.md).
+- [ ] Review/merge PR #38 with all relevant required CI green and independent lane acceptance of migration instructions.
+- [ ] Confirm **full** native source lifecycle, real pixels, multi-context scene separation and lossless resimulation for both engines. The audits found executable *entrypoints* but these proofs must be furnished by C and D; G0 does not assert that they have passed.
+- [ ] Clear GPL combined-distribution and original-game media/asset release obligations; use licensed and hash-pinned fixture assets. No proprietary game data to be shipped.
+
+**Lane readiness:** the v1 interfaces are published and can be implemented by A–D independently. **G0 as a completion gate stays open** until PR review/CI and identified feasibility/license blockers are resolved. G0 structural fixtures never stand in for native gameplay checks.
 
 ## Gate 1: Data substrate
 
@@ -100,21 +112,26 @@ This is an implementation sequence for the PRD and [technical design](TECHNICAL_
 - Universal Rust workspace, adapter catalog, native-module runtime, authority
   fencing, scheduling, render planning, and an **engine-independent real
   subprocess protocol** for non-Send or process-global native engines compile
-  and pass CI. Source-specific full gameplay workers are not connected yet.
+  and pass CI. Full-game original scene and renderer workers are not connected; Cave Story's partial original source player/weapon/bullet worker **is** connected.
 - PostgreSQL schema, custody transfer, authoritative presence-travel, and **atomic native simulation checkpoints** execute and pass CI. The Rust `oasis-store` client round-trips real native state through PostgreSQL; cold-start state restoration is now available through `oasis-service`, and expired leases can be reclaimed by a restarted native context; in-process live travel is now SQL-coordinated, with native-context quarantine
   and restart recovery on failed destination instantiation. Persistent-lease
   gating is enforced at tick boundaries. Cross-process travel, cancellation
   of in-flight game logic, and durable-effect fencing remain open.
-- Both original Rust engines remain pinned Git submodules. Cave Story now has native hitbox, ammunition, and PXM stage modules, and DOOM has a GPL-scoped original fixed-math/bbox module. The source-backed CI builds and executes each adapter independently. **Neither game has a complete original controller, scene/tick, full physics, or native renderer wired into OASIS.** DOOM gameplay globals require isolation before full-world execution.
+- Both original Rust engines remain pinned Git submodules. Cave Story now has native hitbox, ammunition, and PXM stage modules, and DOOM has a GPL-scoped original fixed-math/bbox module. The source-backed CI builds and executes each adapter independently. **Cave Story has partial original controller/movement/collision/weapon/projectile execution; neither game has a full scene, lossless source state, or original native renderer in OASIS.** DOOM gameplay globals require isolation before full-world execution.
 - The development TCP gateway is loopback-only and does not provide a production player API or full gameplay state replication.
 - Final black-box interoperability has **not** been attempted; cross-game code must remain absent.
 
-## Workstream separation
+## Independent lanes after published G0 interface (issue #37)
 
-- **Platform core:** schema, data service, universal runtime, authoritative MMO hosting, generic tests.
-- **Adapter A:** DOOM source extraction, DOOM-only tests, no edits to Adapter B.
-- **Adapter B:** Cave Story source extraction, Cave-Story-only tests, no edits to Adapter A.
-- **Validation:** contract suite and independent black-box verification report; no features in the validation lane.
+| Lane | Current status | Owner-owned changes; proof gate |
+| --- | --- | --- |
+| **A: MMO/data plane** | **Not verified** | Store/service/auth/registry/multiclient recovery; authenticated two-user item/effect tests and PostgreSQL multi-node fencing. No game-specific SQL. |
+| **B: native/graphics** | **Not verified** | v1 worker ABI, sandboxing, clocks, real native pixel transport/compositor/viewer and independent **executable** 2D/3D fixture crates. No source gameplay substitutes. |
+| **C: DOOM** | **Blocked** (world/renderer/asset) | Only DOOM native source/adapter files; original game loop, legal IWAD, real frame and complete restart test. No Cave Story dependency. |
+| **D: Cave Story** | **Blocked** (full scene/snapshot/renderer/asset) | Only Cave Story source/adapter files; full original GameScene, source camera/render and replay-equivalent cold restore. No DOOM dependency. |
+| **Final #7** | **Not started** | Verification **only**, after A–D and production assembly are independently green. No pairwise implementation. |
+
+Every lane imports [G0 v1](contracts/G0_SPEC.md) and [neutral vectors](contracts/src/neutral.rs). Shared interface changes belong to separate G0-reviewed PRs with documented migration and independent adapter CI. No production compatibility layer or pair-specific branch. A passing structural envelope is not a game conformance assertion.
 
 ## Do not begin with
 
