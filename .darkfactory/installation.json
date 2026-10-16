@@ -4,12 +4,12 @@
   "slug": "marius-patrik/OASIS",
   "sourceBranch": "main",
   "release": {
-    "tag": "v0.291.6",
-    "sha": "368eb9d75d5d828e7ac17fe590d4dc17b028cebc",
-    "digest": "9b601ce17446348fbbac74597067855be7c05f004670cd14d9d77dd40ab545e0"
+    "tag": "v0.292.3",
+    "sha": "fc5896c9ffbf9b1ac5762a271ec2b26ee0efafd4",
+    "digest": "ce2899a8ca2cc65b4baffedd7c2992be29e99f604a12ce59d752b0b363d262ca"
   },
   "fileHashes": {
-    "repo.dfconfig": "55d705641fff266076b199be3b504198a35078de9e1d6b6e96b4588378e6affc",
-    ".github/workflows/darkfactory-control.yml": "5576e69d4c28aea534989a0b76b06727af4e8df8a1f44405bf0668037771fa92"
+    "repo.dfconfig": "93dc681f982f20983c5fad22a40692f1ee9e1377a430949c8bf629b20097d597",
+    ".github/workflows/darkfactory-control.yml": "1e962c17c5c1da8e5f5b2a7679aeccb90be5ebfeb4fb4811290af8d7d5a3b266"
   }
 }
