@@ -1,4 +1,4 @@
-//! OASIS v0.1 contract sketch: compile-oriented Rust surface, not a runtime implementation.
+//! OASIS universal transport primitives and source-neutral native contracts.
 //! No dependencies on game implementations are permitted in this crate.
 //! IDs are abstract 128-bit values; the transport layer maps them to SQL UUIDs.
 
@@ -401,3 +401,8 @@ mod tests {
         assert_ne!(a, b);
     }
 }
+/// Gate G0 production full-game role contracts. Partial v0 helpers are not conformance.
+pub mod universal;
+
+/// Engine-agnostic 2D/3D test vectors consumed independently by every lane.
+pub mod neutral;

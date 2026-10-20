@@ -1,4 +1,4 @@
-# Cave Story native hitbox adapter (partial)
+# Cave Story native source adapter — partial world integration
 
 **Scope:** OASIS calls the actual upstream `doukutsu-rs` implementation of
 `HitExtents::point_in_entity_x` and `point_in_entity_y` in
@@ -14,14 +14,16 @@ The independent [native weapon module](src/weapon.rs) calls the original
 Cave Story `Weapon::consume_ammo` and `Weapon::refill_ammo` methods directly.
 It preserves source item identity, snapshot revisions, unknown native metadata,
 and original ammunition semantics (including unlimited ammunition and maximum
-refill), even when instantiated in a different OASIS host. Projectile
-simulation, firing cooldown, sound effects, player inventories, and weapon XP
-are **not** implemented by this initial source-backed item capability.
+refill), even when instantiated in a different OASIS host. This isolated ammunition module is distinct from the source-native
+player worker below, which *does* execute original inventory/weapon firing,
+projectile spawning/movement and track ammunition/XP. Complete source-world
+audio and **lossless** cooldown/bullet state persistence remain unimplemented.
 
-This **does not** constitute a full Cave Story adapter: its player controller,
-tile/slope collision response, NPC interactions, weapons, camera, original
-rendering pipeline, and playable worlds are not yet wired into OASIS. In
-particular, point-in-hitbox membership is only a small part of its physics.
+This **does not** constitute a full Cave Story game adapter. The original
+player/controller, PXM tile collision, inventory/weapon and bullet ticks run in
+the separate worker described below, while NPCs, scripts, all complete scene
+state, native camera/rendering and multiplayer playable worlds remain missing.
+This isolated hitbox capability is only one part of the native simulation.
 
 The nested Cargo workspace intentionally compiles the pinned upstream crate
 as a dependency; root OASIS CI is independent of the upstream game's large
@@ -62,9 +64,10 @@ source-specific refill semantics after restarting into another native worker.
 cargo test --manifest-path adapters/cave-story/Cargo.toml --test process
 ```
 
-This **does not** expose the full upstream player tick or scene renderer.
-Those upstream modules are private and require a source-native bridge, not
-a replica Cave Story physics/controller model in OASIS.
+This standalone hitbox/ammunition/stage worker does not itself expose
+the player/scene renderer. The separate source-native player worker below
+**does** invoke original `Player::tick` through a reviewed source patch;
+a complete `GameScene` and native renderer are still absent.
 
 ## Original player tick bridge (source patch)
 
@@ -101,10 +104,11 @@ formulas are copied into OASIS.
 
 This is **headless original player movement and tile physics**, not a complete
 playable OASIS world or checkpoint-compatible original game scene.
-Native scene NPCs, projectiles, cameras/renderers, original world script
-lifecycle and complete opaque player-state serialization remain open. The existing worker protocol can host this non-`Send`
-engine context once its lifecycle and complete native snapshot rules
-are integrated.
+Native scene NPCs/scripts, complete original renderer/camera and fully
+opaque source-owned serialization remain open. Native projectiles **do**
+currently tick in the player worker, but their in-flight state is not yet
+checkpointed. The source worker already runs in a non-`Send` isolated child,
+not merely a planned process boundary.
 
 ## Original player simulation in a game worker (movement-only checkpoint)
 
@@ -153,3 +157,13 @@ state in another game-worker process.
 are *not* yet serialized. Restarting the player preserves source weapon ammo
 but does not restore in-flight projectiles or exact firing timing; this
 remains a partial, not fully lossless, native game checkpoint.
+
+## G0 full-game interface
+
+The [G0 contract-major 1 source-neutral role specification](../../contracts/G0_SPEC.md)
+is the implementation target for this source adapter. Existing partial
+`NativeModule` functions have not passed whole-game conformance. Adopt the
+same [2D and 3D neutral vectors](../../contracts/src/neutral.rs) as other
+engines, implement complete `GameScene` native lifecycle and render pixels,
+then prove exact fresh-worker resimulation including bullets, timers, scripts
+and native camera. Review the [pinned-source feasibility / asset audit](../../contracts/G0_FEASIBILITY_AND_LICENSES.md).
